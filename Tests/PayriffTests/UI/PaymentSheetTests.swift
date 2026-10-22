@@ -13,7 +13,7 @@ import WebKit
 struct PaymentSheetTests {
     @Test("Page sheet with a large detent, grabber, modal presentation and a delegate")
     func sheetConfiguration() throws {
-        let sheet = PaymentSheet(language: .az)
+        let sheet = PaymentSheet(language: .az, websiteDataStore: .nonPersistent())
         let navigation = sheet.navigationController
         #expect(navigation.modalPresentationStyle == .pageSheet)
         #expect(navigation.isModalInPresentation)
@@ -26,7 +26,7 @@ struct PaymentSheetTests {
 
     @Test("Chrome: only the localized title (no address or padlock), close button with a VoiceOver label")
     func chrome() throws {
-        let sheet = PaymentSheet(language: .az)
+        let sheet = PaymentSheet(language: .az, websiteDataStore: .nonPersistent())
         let page = sheet.rootPage
         page.loadViewIfNeeded()
         #expect(page.navigationItem.titleView === page.titleView)
@@ -42,7 +42,7 @@ struct PaymentSheetTests {
 
     @Test("The web view feels native: no zoom, bounce, scroll indicators, link previews or swipe navigation")
     func webViewLook() {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
         let webView = sheet.rootPage.webView
         #expect(!webView.allowsLinkPreview)
         #expect(!webView.allowsBackForwardNavigationGestures)
@@ -53,10 +53,14 @@ struct PaymentSheetTests {
         #expect(webView.scrollView.pinchGestureRecognizer?.isEnabled != true)
     }
 
-    @Test("The web view runs no injected script and keeps the system user agent")
+    @Test("The web view runs no injected script, keeps the system user agent and keeps its website data in the payment's store")
     func webViewConfiguration() {
-        let sheet = PaymentSheet(language: .en)
+        let store = WKWebsiteDataStore.nonPersistent()
+        let sheet = PaymentSheet(language: .en, websiteDataStore: store)
         let configuration = sheet.rootPage.webView.configuration
+        // The payment's non-persistent store, never the app's default one (CONTRACT §9.1a).
+        #expect(configuration.websiteDataStore === store)
+        #expect(!configuration.websiteDataStore.isPersistent)
         #expect(configuration.preferences.javaScriptCanOpenWindowsAutomatically)
         #expect(configuration.defaultWebpagePreferences.allowsContentJavaScript)
         #expect(configuration.userContentController.userScripts.isEmpty)
@@ -69,7 +73,7 @@ struct PaymentSheetTests {
 
     @Test("Overlays: checking and the page-load error with the shared strings")
     func overlays() throws {
-        let sheet = PaymentSheet(language: .ru)
+        let sheet = PaymentSheet(language: .ru, websiteDataStore: .nonPersistent())
         let page = sheet.rootPage
         page.loadViewIfNeeded()
 
@@ -129,7 +133,7 @@ struct PaymentSheetTests {
 
     @Test("Without a window the close confirmation keeps paying instead of hanging")
     func confirmationWithoutWindow() {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
         var answers: [Bool] = []
         sheet.confirmClose { answers.append($0) }
         #expect(answers == [false])
@@ -164,7 +168,7 @@ struct PaymentSheetTests {
 
     @Test("Screen protection: an opaque cover hides the sheet while its scene is inactive (CONTRACT §16.0 item 4)")
     func privacyCover() throws {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
         let container: UIView = sheet.navigationController.view
         container.frame = CGRect(x: 0, y: 0, width: 390, height: 800)
         let scene = NSObject()
@@ -201,7 +205,7 @@ struct PaymentSheetTests {
 
     @Test("Every page sits inset on the white backdrop: 16 pt at the sides, 12 pt at the top and bottom (CONTRACT §9.1)")
     func bankPageInset() throws {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
         let page = sheet.rootPage
         page.loadViewIfNeeded()
         page.view.frame = CGRect(x: 0, y: 0, width: 390, height: 800)
@@ -219,7 +223,7 @@ struct PaymentSheetTests {
 
     @Test("Dismissing a sheet that is not presented completes at once")
     func dismissNotPresented() {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
         var completed = 0
         sheet.dismiss { completed += 1 }
         #expect(completed == 1)
@@ -258,7 +262,7 @@ final class SheetHarness {
     /// Forwards the card flow's UI calls to the sheet; the close confirmation answers "close".
     @MainActor
     final class SheetUI: CardFlowUI {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
 
         func presentThreeDSSheet(for flow: any SheetFlowHandling) -> Bool {
             sheet.flow = flow

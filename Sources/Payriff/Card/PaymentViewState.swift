@@ -16,9 +16,6 @@ struct PaymentViewState: Equatable {
         case failed(PayriffError)
     }
 
-    /// The error line of an order that cannot be paid (CONTRACT §16.14).
-    static let notPayableMessage = "This order cannot be paid"
-
     var order = Order.loading
     /// Whether every field of the card form is valid.
     var isFormComplete = false
@@ -27,9 +24,8 @@ struct PaymentViewState: Equatable {
     /// A payment reached a status (success, declined, cancelled or pending): the view does not pay
     /// the order again.
     private(set) var isFinished = false
-    /// Why the order can no longer be paid after a payment: the message of a fatal error or of
-    /// `ORDER_NOT_PAYABLE`.
-    private(set) var paymentError: String?
+    /// Why the order can no longer be paid after a payment: a fatal error or `ORDER_NOT_PAYABLE`.
+    private(set) var paymentError: PayriffError?
     /// The texts, in the view's language.
     var strings: CardStrings
     /// Whether a fatal error was reported through `onResult`; it is reported once.
@@ -64,17 +60,18 @@ struct PaymentViewState: Equatable {
     }
 
     /// The error line under the button: why the order cannot be paid (`retrieveOrder`'s error
-    /// message, "This order cannot be paid", or the error that ended a payment); `nil` while the
-    /// order loads or can be paid.
+    /// message, `view.notPayable` in the view's language for an order that loaded but cannot be
+    /// paid by card, or the error that ended a payment); `nil` while the order loads or can be
+    /// paid (CONTRACT §16.14).
     var errorMessage: String? {
-        if let paymentError { return paymentError }
+        if let paymentError { return message(of: paymentError) }
         switch order {
         case .loading, .payable:
             return nil
         case .notPayable:
-            return Self.notPayableMessage
+            return strings.view(.notPayable)
         case .failed(let error):
-            return Self.message(of: error)
+            return message(of: error)
         }
     }
 
@@ -136,16 +133,16 @@ struct PaymentViewState: Equatable {
             return
         }
         if error.isFatal || error.code == .orderNotPayable {
-            paymentError = Self.message(of: error)
+            paymentError = error
         }
         // Already reported through onResult with the payment's result.
         if error.isFatal { reportedFatalError = true }
     }
 
-    /// An error's message for the error line, or "This order cannot be paid" when it has none.
-    private static func message(of error: PayriffError) -> String {
+    /// An error's message for the error line, or `view.notPayable` when it has none.
+    private func message(of error: PayriffError) -> String {
         let message = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? notPayableMessage : message
+        return message.isEmpty ? strings.view(.notPayable) : message
     }
 
     /// An amount as on Payriff's payment page: two decimals and `.` as the separator, without

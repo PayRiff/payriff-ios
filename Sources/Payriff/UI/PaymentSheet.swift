@@ -39,11 +39,13 @@ final class PaymentSheet: NSObject {
     /// The opaque view that hides the sheet while its scene is not active (CONTRACT §16.0 item 4).
     private(set) var privacyCover: PrivacyCoverView?
 
-    /// - Parameter language: The language of the sheet's texts.
-    init(language: PayriffLanguage) {
+    /// - Parameters:
+    ///   - language: The language of the sheet's texts.
+    ///   - websiteDataStore: The payment's non-persistent website data store (CONTRACT §9.1a).
+    init(language: PayriffLanguage, websiteDataStore: WKWebsiteDataStore) {
         let strings = PayriffStrings(language: language)
         self.strings = strings
-        let webView = Self.makeWebView(configuration: Self.makeConfiguration())
+        let webView = Self.makeWebView(configuration: Self.makeConfiguration(websiteDataStore: websiteDataStore))
         let rootPage = PaymentPageViewController(webView: webView, strings: strings)
         self.rootPage = rootPage
         self.navigationController = PaymentNavigationController(rootViewController: rootPage)
@@ -66,10 +68,11 @@ final class PaymentSheet: NSObject {
     }
 
     /// The configuration of the web view (CONTRACT §7.7, §16.8). No script, message handler or
-    /// user agent is ever added.
-    static func makeConfiguration() -> WKWebViewConfiguration {
+    /// user agent is ever added. Website data goes to `websiteDataStore`, the payment's
+    /// non-persistent store, never to the app's default store (CONTRACT §9.1a).
+    static func makeConfiguration(websiteDataStore: WKWebsiteDataStore) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = websiteDataStore
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         return configuration

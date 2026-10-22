@@ -179,7 +179,7 @@ struct CardVectorTests {
             #expect(table["label"]?.count == PayriffCardField.allCases.count, "\(code): no extra labels")
             // The title of the grouped layout's card box (CONTRACT §16.4), the only group text.
             #expect(table["group"] == ["cardInformation": strings.cardInformation], "\(code) group")
-            // The payment view's Pay title, secure line and footer (CONTRACT §16.14), exactly.
+            // The payment view's Pay title, secure line, footer and not-payable line (CONTRACT §16.14), exactly.
             let view = Dictionary(uniqueKeysWithValues: CardStrings.ViewText.allCases.map { ($0.rawValue, strings.view($0)) })
             #expect(table["view"] == view, "\(code) view")
             #expect(CardStrings.viewTexts[language]?.count == CardStrings.ViewText.allCases.count, "\(code): every view text")

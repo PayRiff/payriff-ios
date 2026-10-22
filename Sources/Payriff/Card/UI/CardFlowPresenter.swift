@@ -3,7 +3,7 @@ import UIKit
 import WebKit
 
 /// The UIKit side of a card payment's 3-D Secure step (CONTRACT §16.7, §16.8): the 3DS sheet and
-/// the hidden web views of the 3DS method.
+/// the hidden web views of the 3DS method. Each payment has its own presenter.
 @available(iOSApplicationExtension, unavailable)
 @MainActor
 final class CardFlowPresenter: CardFlowUI {
@@ -12,7 +12,13 @@ final class CardFlowPresenter: CardFlowUI {
     private let language: PayriffLanguage
     private let opener: any ExternalURLOpening
     private var sheet: PaymentSheet?
-    private let methodFrames = ThreeDSMethodFrames()
+    /// The hidden web views of the 3DS method (internal for tests).
+    let methodFrames = ThreeDSMethodFrames()
+    /// The website data of this payment's web views (CONTRACT §9.1a): one non-persistent store,
+    /// shared by the 3DS sheet and every hidden 3DS-method web view, so the method's cookies reach
+    /// the challenge. It is made with the first web view; a payment without one has none. Nothing
+    /// reaches the app's default store or the disk, and the data goes away with the payment.
+    private(set) var websiteDataStore: WKWebsiteDataStore?
 
     init(form: PayriffCardForm, presenter: UIViewController?, language: PayriffLanguage, opener: any ExternalURLOpening) {
         self.form = form
@@ -31,11 +37,24 @@ final class CardFlowPresenter: CardFlowUI {
 
     func presentThreeDSSheet(for flow: any SheetFlowHandling) -> Bool {
         guard sheet == nil, let host = resolvePresenter() else { return false }
-        let sheet = PaymentSheet(language: language)
+        let sheet = makeThreeDSSheet()
         sheet.flow = flow
         guard sheet.present(from: host) else { return false }
         self.sheet = sheet
         return true
+    }
+
+    /// A 3DS sheet whose web view keeps its website data in the payment's store.
+    func makeThreeDSSheet() -> PaymentSheet {
+        PaymentSheet(language: language, websiteDataStore: paymentWebsiteDataStore())
+    }
+
+    /// The payment's website data store, made on first use.
+    private func paymentWebsiteDataStore() -> WKWebsiteDataStore {
+        if let websiteDataStore { return websiteDataStore }
+        let store = WKWebsiteDataStore.nonPersistent()
+        websiteDataStore = store
+        return store
     }
 
     func loadThreeDS(_ request: URLRequest) {
@@ -81,7 +100,7 @@ final class CardFlowPresenter: CardFlowUI {
 
     func startMethodFrames(_ requests: [URLRequest], apiHost: String) {
         let window = form?.window ?? resolvePresenter()?.viewIfLoaded?.window
-        methodFrames.start(requests, apiHost: apiHost, in: window)
+        methodFrames.start(requests, apiHost: apiHost, websiteDataStore: paymentWebsiteDataStore(), in: window)
     }
 
     func stopMethodFrames() {
@@ -94,16 +113,19 @@ final class CardFlowPresenter: CardFlowUI {
 /// §16.8 navigation rules, never open other apps or windows, and never show JavaScript dialogs.
 @MainActor
 final class ThreeDSMethodFrames: NSObject, WKNavigationDelegate {
-    private var webViews: [WKWebView] = []
+    /// The running hidden web views (internal for tests).
+    private(set) var webViews: [WKWebView] = []
     private var navigators: [ObjectIdentifier: ThreeDSNavigator] = [:]
 
     /// The number of running hidden web views (tests).
     var count: Int { webViews.count }
 
-    func start(_ requests: [URLRequest], apiHost: String, in window: UIWindow?) {
+    /// Loads each request in a hidden web view of its own. Their website data goes to
+    /// `websiteDataStore`, the payment's store, which the 3DS sheet shares (CONTRACT §9.1a).
+    func start(_ requests: [URLRequest], apiHost: String, websiteDataStore: WKWebsiteDataStore, in window: UIWindow?) {
         stop()
         for request in requests {
-            let configuration = PaymentSheet.makeConfiguration()
+            let configuration = PaymentSheet.makeConfiguration(websiteDataStore: websiteDataStore)
             configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
             let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: configuration)
             webView.alpha = 0

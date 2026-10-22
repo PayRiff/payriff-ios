@@ -41,7 +41,8 @@
       "view": {
         "pay": "Ödə",
         "secure": "PCI DSS ilə təhlükəsiz ödəniş",
-        "poweredBy": "Payriff tərəfindən hazırlanıb"
+        "poweredBy": "Payriff tərəfindən hazırlanıb",
+        "notPayable": "Bu sifarişi kartla ödəmək mümkün deyil"
       }
     },
     "en": {
@@ -84,7 +85,8 @@
       "view": {
         "pay": "Pay",
         "secure": "Proceed securely by PCI DSS",
-        "poweredBy": "Powered by Payriff"
+        "poweredBy": "Powered by Payriff",
+        "notPayable": "This order cannot be paid by card"
       }
     },
     "ru": {
@@ -127,7 +129,8 @@
       "view": {
         "pay": "Оплатить",
         "secure": "Безопасная оплата по PCI DSS",
-        "poweredBy": "При поддержке Payriff"
+        "poweredBy": "При поддержке Payriff",
+        "notPayable": "Этот заказ нельзя оплатить картой"
       }
     }
   }

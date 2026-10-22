@@ -175,8 +175,8 @@ PayriffPaymentView(
 // SwiftUI: PayriffPaymentScreen(orderId:clientSecret:language:style:onResult:) takes the same values.
 ```
 
-- It shows the card form, a Pay button with the order's amount ("Pay 1.02 AZN"), the PCI DSS, Mastercard and Visa badges, a "Proceed securely by PCI DSS" line and a "Powered by Payriff" footer.
-- It reads the order with `Payriff.retrieveOrder` when it appears. The Pay button stays disabled while the order loads, while the form is incomplete and while a payment runs. It also stays disabled when the order cannot be paid by card or did not load: a line under the button then says why, and VoiceOver reads it out. If the order did not load for a reason that is not fatal, such as no network, the view reads it again the next time it appears.
+- It shows the card form, a Pay button with the order's amount ("Pay 1.02 AZN"), the Mastercard and Visa badges, a "Proceed securely by PCI DSS" line and a "Powered by Payriff" footer.
+- It reads the order with `Payriff.retrieveOrder` when it appears. The Pay button stays disabled while the order loads, while the form is incomplete and while a payment runs. It also stays disabled when the order cannot be paid by card or did not load: a line under the button then says why ("This order cannot be paid by card" in the view's language, or the error's message), and VoiceOver reads it out. If the order did not load for a reason that is not fatal, such as no network, the view reads it again the next time it appears.
 - Pay runs `Payriff.confirmCardPayment` with the view's card form. While it runs, a spinner replaces the button's title and the form is locked. 3-D Secure opens in Payriff's sheet.
 - `onResult` is called on the main actor with the result of each payment attempt. It is also called once with a fatal error that ends the order (`error.isFatal`, for example `SESSION_EXPIRED` for an expired client secret), even when the error comes from reading the order. After a result with a status (success, declined, cancelled or pending), the view does not pay the order again.
 - A failure that is not fatal keeps the order payable, for example `NETWORK_ERROR` (`error.isRetryable`) or `PAYMENT_FAILED`. Pay stays enabled, so the customer can try again in the same view, and you can also show the view again with the same `orderId` and `clientSecret`. The view does not show the message of such a failure: show `error.message` yourself. `ORDER_NOT_PAYABLE` and fatal errors disable Pay and show their message under the button.
@@ -488,6 +488,7 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
 - **App switcher and screenshots.** While the app is inactive (the app switcher, Control Center, a call or another app in Split View), opaque covers hide the card form and the 3-D Secure sheet, so snapshots never show what the customer typed.
 - **Session replay and screen recording.** Tools that record your app's screen would capture the form and the bank's pages. Exclude or mask them in such tools.
 - **Privacy manifest.** The SDK ships `PrivacyInfo.xcprivacy`: no tracking; Payment Info and Purchase History collected for App Functionality, linked to the user. Reflect this in your App Store privacy details.
+- **3-D Secure website data.** The 3-D Secure sheet and the hidden 3-D Secure Method web views of a payment share one non-persistent website data store (`WKWebsiteDataStore.nonPersistent()`), and every payment gets a new one. Their cookies and other website data never reach your app's default website data store or the disk, and they go away with the payment.
 
 ## Platform notes
 

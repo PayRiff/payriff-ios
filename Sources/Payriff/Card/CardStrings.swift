@@ -48,6 +48,8 @@ struct CardStrings: Sendable, Equatable {
         case secure
         /// The footer; "Payriff" is replaced by the logo.
         case poweredBy
+        /// The error line of an order that loaded but cannot be paid by card.
+        case notPayable
     }
 
     /// The error text for `error` in `field`. An error without a specific text falls back to the
@@ -149,10 +151,25 @@ struct CardStrings: Sendable, Equatable {
         .ru: "Информация о карте",
     ]
 
-    /// `view.*`: the payment view's Pay button, secure line and footer.
+    /// `view.*`: the payment view's Pay button, secure line, footer and not-payable line.
     static let viewTexts: [PayriffLanguage: [ViewText: String]] = [
-        .az: [.pay: "Ödə", .secure: "PCI DSS ilə təhlükəsiz ödəniş", .poweredBy: "Payriff tərəfindən hazırlanıb"],
-        .en: [.pay: "Pay", .secure: "Proceed securely by PCI DSS", .poweredBy: "Powered by Payriff"],
-        .ru: [.pay: "Оплатить", .secure: "Безопасная оплата по PCI DSS", .poweredBy: "При поддержке Payriff"],
+        .az: [
+            .pay: "Ödə",
+            .secure: "PCI DSS ilə təhlükəsiz ödəniş",
+            .poweredBy: "Payriff tərəfindən hazırlanıb",
+            .notPayable: "Bu sifarişi kartla ödəmək mümkün deyil",
+        ],
+        .en: [
+            .pay: "Pay",
+            .secure: "Proceed securely by PCI DSS",
+            .poweredBy: "Powered by Payriff",
+            .notPayable: "This order cannot be paid by card",
+        ],
+        .ru: [
+            .pay: "Оплатить",
+            .secure: "Безопасная оплата по PCI DSS",
+            .poweredBy: "При поддержке Payriff",
+            .notPayable: "Этот заказ нельзя оплатить картой",
+        ],
     ]
 }

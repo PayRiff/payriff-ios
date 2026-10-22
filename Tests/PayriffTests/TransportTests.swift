@@ -141,8 +141,8 @@ struct TransportTests {
     }
 }
 
-/// Guards from CONTRACT §7.7, §16.3 and revision 5: no script injection, no user-agent change,
-/// no `Bearer`, no order creation and no secret key.
+/// Guards from CONTRACT §7.7, §9.1a, §16.3 and revision 5: no script injection, no user-agent
+/// change, no default website data store, no `Bearer`, no order creation and no secret key.
 @Suite("Source guards")
 struct SourceGuardTests {
     static let sourcesDirectory = URL(fileURLWithPath: #filePath)
@@ -167,6 +167,25 @@ struct SourceGuardTests {
                 #expect(!text.contains(symbol), "\(file) contains \(symbol)")
             }
         }
+    }
+
+    @Test("Shipped sources never use the app's default website data store (CONTRACT §9.1a)")
+    func noDefaultWebsiteDataStore() throws {
+        // Split so that this list does not match itself in a search of the repository.
+        let forbidden = ["WKWebsiteDataStore" + ".default", "websiteDataStore = " + ".default", "WKWebsiteDataStore(" + "forIdentifier"]
+        let files = try FileManager.default.subpathsOfDirectory(atPath: Self.sourcesDirectory.path)
+            .filter { $0.hasSuffix(".swift") }
+        var configurationFiles: [String] = []
+        for file in files {
+            let text = try String(contentsOf: Self.sourcesDirectory.appendingPathComponent(file), encoding: .utf8)
+            for symbol in forbidden {
+                #expect(!text.contains(symbol), "\(file) contains \(symbol)")
+            }
+            if text.contains("WKWebViewConfiguration()") { configurationFiles.append(file) }
+        }
+        // Every web view configuration comes from PaymentSheet.makeConfiguration(websiteDataStore:),
+        // which sets the payment's store.
+        #expect(configurationFiles == ["UI/PaymentSheet.swift"])
     }
 
     @Test("The SDK and the example app never create orders or hold a secret key (CONTRACT revision 5)")

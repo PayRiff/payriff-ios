@@ -2,6 +2,7 @@ import Foundation
 import os
 import Testing
 import UIKit
+import WebKit
 @testable import Payriff
 
 /// Presents the real 3-D Secure sheet in a window of the example app. The network is a fake:
@@ -105,6 +106,9 @@ struct ThreeDSSheetTests {
         try await waitUntil { sheet(of: host.root)?.isBeingPresented == false }
         let navigation = try #require(sheet(of: host.root))
         #expect(navigation.sheetPresentationController?.detents.map(\.identifier) == [.large])
+        // The payment's own website data store, never the app's default one (CONTRACT §9.1a).
+        let page = try #require(navigation.viewControllers.first as? PaymentPageViewController)
+        #expect(!page.webView.configuration.websiteDataStore.isPersistent)
         let second = await Payriff.confirmCardPayment(form, orderId: "o1", clientSecret: Self.clientSecret, from: host.root)
         #expect(second.error?.code == .paymentInProgress)
 

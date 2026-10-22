@@ -44,19 +44,19 @@ struct PayriffStrings: Sendable {
             .ru: "Повторить",
         ],
         .cancelConfirmTitle: [
-            .az: "Ödənişi ləğv edək?",
-            .en: "Cancel payment?",
-            .ru: "Отменить оплату?",
+            .az: "Pəncərəni bağlayaq?",
+            .en: "Close this window?",
+            .ru: "Закрыть окно?",
         ],
         .cancelConfirmMessage: [
-            .az: "Ödəniş hələ tamamlanmayıb. Pəncərəni bağlasanız, ödəniş ləğv olunacaq.",
-            .en: "The payment isn't complete yet. If you close this window, the payment will be cancelled.",
-            .ru: "Оплата ещё не завершена. Если закрыть окно, оплата будет отменена.",
+            .az: "Ödəniş hələ tamamlanmayıb. Pəncərəni bağlasanız, ödənişin statusunu yoxlayacağıq.",
+            .en: "The payment isn't finished yet. If you close this window, we'll check its status.",
+            .ru: "Оплата ещё не завершена. Если закрыть окно, мы проверим её статус.",
         ],
         .cancelConfirmYes: [
-            .az: "Ləğv et",
-            .en: "Cancel payment",
-            .ru: "Отменить",
+            .az: "Bağla",
+            .en: "Close",
+            .ru: "Закрыть",
         ],
         .cancelConfirmNo: [
             .az: "Ödənişə davam et",

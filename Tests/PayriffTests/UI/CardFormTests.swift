@@ -645,7 +645,7 @@ struct CardFormTests {
 
     @Test("The sheet in 3DS mode loads a native form POST and reports finished loads")
     func sheetLoadsPost() async throws {
-        let sheet = PaymentSheet(language: .en)
+        let sheet = PaymentSheet(language: .en, websiteDataStore: .nonPersistent())
         var request = URLRequest(url: URL(string: "https://acs.bank.example/challenge")!)
         request.httpMethod = "POST"
         request.httpBody = Data("creq=abc".utf8)
@@ -655,15 +655,14 @@ struct CardFormTests {
         sheet.rootPage.webView.stopLoading()
     }
 
-    @Test("Hidden 3DS-method web views: invisible, attached to the window, removed on stop")
+    @Test("Hidden 3DS-method web views: invisible, attached to the window, in the payment's website data store, removed on stop")
     func methodFrames() throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.isHidden = false
         defer { window.isHidden = true }
         let frames = ThreeDSMethodFrames()
-        let request = CardPaymentFlow.formPost(URL(string: "https://acs.bank.example/method")!, fields: [("threeDSMethodData", "x")])
-        // Hosts under the reserved .example TLD: the hidden web views never reach Payriff or a bank.
-        frames.start([request, CardPaymentFlow.formPost(URL(string: "https://gateway.payriff.example/api/v3/gateway/atb/method")!, fields: [])], apiHost: "gateway.payriff.example", in: window)
+        let store = WKWebsiteDataStore.nonPersistent()
+        frames.start(Self.methodRequests, apiHost: "gateway.payriff.example", websiteDataStore: store, in: window)
         #expect(frames.count == 2)
         let hidden = window.subviews.compactMap { $0 as? WKWebView }
         #expect(hidden.count == 2)
@@ -671,10 +670,65 @@ struct CardFormTests {
             #expect(webView.alpha == 0)
             #expect(!webView.isUserInteractionEnabled)
             #expect(webView.accessibilityElementsHidden)
+            #expect(webView.configuration.websiteDataStore === store)
         }
         frames.stop()
         #expect(frames.count == 0)
         #expect(window.subviews.compactMap { $0 as? WKWebView }.isEmpty)
     }
+
+    @Test("One payment's 3DS sheet and hidden 3DS-method web views share one non-persistent website data store; the next payment gets a new one (CONTRACT §9.1a)")
+    func websiteDataStorePerPayment() throws {
+        // Nothing here is in a window, so the hidden web views are not attached to one. That is
+        // enough to check their stores, and the test also runs where no UIWindow can be made
+        // (Mac Catalyst without a host app).
+        let form = PayriffCardForm(showsHolder: false, language: .en)
+        let host = UIViewController()
+        // Every card payment gets a presenter of its own (Payriff.startCardPayment).
+        func payment() -> CardFlowPresenter {
+            CardFlowPresenter(form: form, presenter: host, language: .en, opener: NoURLOpener())
+        }
+
+        let first = payment()
+        #expect(first.websiteDataStore == nil, "no store before the payment shows a web view")
+        first.startMethodFrames(Self.methodRequests, apiHost: "gateway.payriff.example")
+        let store = try #require(first.websiteDataStore)
+        #expect(!store.isPersistent)
+        #expect(first.methodFrames.webViews.count == 2)
+        // A later 3DS-method step and the challenge sheet of the same payment keep the store, so the
+        // method's cookies reach the challenge.
+        first.startMethodFrames(Self.methodRequests, apiHost: "gateway.payriff.example")
+        let sheet = first.makeThreeDSSheet()
+        let stores = first.methodFrames.webViews.map(\.configuration.websiteDataStore) + [sheet.rootPage.webView.configuration.websiteDataStore]
+        #expect(stores.count == 3)
+        #expect(stores.allSatisfy { $0 === store })
+        #expect(first.websiteDataStore === store)
+        first.stopMethodFrames()
+        #expect(first.methodFrames.webViews.isEmpty)
+
+        let second = payment()
+        let secondSheet = second.makeThreeDSSheet()
+        let secondStore = try #require(second.websiteDataStore)
+        #expect(!secondStore.isPersistent)
+        #expect(secondStore !== store)
+        #expect(secondSheet.rootPage.webView.configuration.websiteDataStore === secondStore)
+        second.startMethodFrames(Self.methodRequests, apiHost: "gateway.payriff.example")
+        #expect(second.methodFrames.webViews.count == 2)
+        #expect(second.methodFrames.webViews.allSatisfy { $0.configuration.websiteDataStore === secondStore })
+        second.stopMethodFrames()
+    }
+
+    /// A 3DS-method POST and a server-side method POST. Hosts under the reserved .example TLD:
+    /// the hidden web views never reach Payriff or a bank.
+    static let methodRequests = [
+        CardPaymentFlow.formPost(URL(string: "https://acs.bank.example/method")!, fields: [("threeDSMethodData", "x")]),
+        CardPaymentFlow.formPost(URL(string: "https://gateway.payriff.example/api/v3/gateway/atb/method")!, fields: []),
+    ]
+}
+
+/// Opens nothing: the tests never hand a URL to the system.
+@MainActor
+private struct NoURLOpener: ExternalURLOpening {
+    func open(_ url: URL) {}
 }
 #endif

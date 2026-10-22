@@ -85,7 +85,7 @@ struct PaymentViewStateTests {
             notPayable.isFormComplete = true
             _ = notPayable.orderDidLoad(.success(order))
             #expect(!notPayable.isPayEnabled)
-            #expect(notPayable.errorMessage == "This order cannot be paid")
+            #expect(notPayable.errorMessage == "This order cannot be paid by card")
             #expect(!notPayable.needsOrder)
         }
         var pending = Self.state()
@@ -93,6 +93,33 @@ struct PaymentViewStateTests {
         _ = pending.orderDidLoad(.success(Self.order(status: .pending)))
         #expect(pending.isPayEnabled, "PENDING can be paid too")
         #expect(pending.errorMessage == nil)
+    }
+
+    @Test("An order that cannot be paid by card shows view.notPayable in the view's language")
+    func notPayableLine() {
+        var state = Self.state(.az)
+        _ = state.orderDidLoad(.success(Self.order(status: .approved)))
+        #expect(state.errorMessage == "Bu sifarişi kartla ödəmək mümkün deyil")
+        state.strings = CardStrings(language: .ru)
+        #expect(state.errorMessage == "Этот заказ нельзя оплатить картой", "a new language applies at once")
+        state.strings = CardStrings(language: .en)
+        #expect(state.errorMessage == "This order cannot be paid by card")
+        for language in PayriffLanguage.allCases {
+            state.strings = CardStrings(language: language)
+            #expect(state.errorMessage == state.strings.view(.notPayable), "\(language)")
+        }
+
+        // An error without a message, from loading the order or from a payment, gets the same line.
+        var blank = Self.state(.ru)
+        _ = blank.orderDidLoad(.failure(PayriffError(code: .unknown, message: "")))
+        #expect(blank.errorMessage == "Этот заказ нельзя оплатить картой")
+        var paid = Self.state(.az)
+        _ = paid.orderDidLoad(.success(Self.order()))
+        paid.paymentWillStart()
+        paid.paymentDidFinish(.failed(PayriffError(code: .orderNotPayable, message: " ")))
+        #expect(paid.errorMessage == "Bu sifarişi kartla ödəmək mümkün deyil")
+        paid.strings = CardStrings(language: .en)
+        #expect(paid.errorMessage == "This order cannot be paid by card")
     }
 
     @Test("A failed load shows its message under the button; a fatal error is reported once and not loaded again")
@@ -110,7 +137,7 @@ struct PaymentViewStateTests {
 
         let blank = PayriffError(code: .unknown, message: "  ")
         _ = state.orderDidLoad(.failure(blank))
-        #expect(state.errorMessage == "This order cannot be paid", "an error without a message")
+        #expect(state.errorMessage == "This order cannot be paid by card", "an error without a message")
 
         let expired = PayriffError(code: .sessionExpired, message: "Order not found", httpStatus: 404, isFatal: true)
         #expect(state.orderDidLoad(.failure(expired)) == .failed(expired))
