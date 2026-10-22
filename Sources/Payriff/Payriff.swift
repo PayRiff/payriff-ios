@@ -21,11 +21,13 @@ public enum Payriff {
     /// The configuration set by ``configure(_:)``.
     static private(set) var configuration: PayriffConfig?
 
-    /// Replaceable services; tests swap the transport and the clock.
+    /// Replaceable services; tests swap the transport, the clock and the device checks.
     static var services = Services.live
 
     /// Services the SDK depends on.
     struct Services: Sendable {
+        /// The Client API transport. The live one pins Payriff's certificates (CONTRACT §16.15);
+        /// a test transport replaces it whole.
         var transport: any PayriffHTTPTransport
         var clock: any PaymentClock
         var deviceLanguage: @Sendable () -> PayriffLanguage
@@ -37,13 +39,16 @@ public enum Payriff {
         /// builds never log request and response details (§11, ``HTTPLog``); tests switch this to
         /// exercise both.
         var isDebugBuild: Bool
+        /// The device integrity signals that match now (CONTRACT §16.16, ``DeviceIntegrity``).
+        var deviceSignals: @Sendable () -> [DeviceIntegritySignal]
 
         static let live = Services(
             transport: URLSessionTransport.shared,
             clock: SystemPaymentClock(),
             deviceLanguage: { PayriffLanguage.device },
             clientAppId: { ClientAppID.current },
-            isDebugBuild: compiledForDebug
+            isDebugBuild: compiledForDebug,
+            deviceSignals: { DeviceIntegrity.shared.signals() }
         )
 
         private static var compiledForDebug: Bool {

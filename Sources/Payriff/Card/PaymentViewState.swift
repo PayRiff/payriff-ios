@@ -1,8 +1,8 @@
 import Foundation
 
 /// The state of ``PayriffPaymentView`` and the rules that turn it into what the view shows
-/// (CONTRACT §16.14): the Pay button's text and whether it is enabled, and the error line under
-/// it. Free of UIKit, so `swift test` checks the rules on a Mac.
+/// (CONTRACT §16.14, §16.16): the Pay button's text and whether it is enabled, and the error line
+/// under it. Free of UIKit, so `swift test` checks the rules on a Mac.
 struct PaymentViewState: Equatable {
     /// The order, as `retrieveOrder` described it when the view appeared.
     enum Order: Equatable {
@@ -28,8 +28,16 @@ struct PaymentViewState: Equatable {
     private(set) var paymentError: PayriffError?
     /// The texts, in the view's language.
     var strings: CardStrings
+    /// The style's word for the Pay button in place of `view.pay`; `nil` keeps `view.pay`.
+    var payButtonLabel: String?
     /// Whether a fatal error was reported through `onResult`; it is reported once.
     private(set) var reportedFatalError = false
+    /// `DEVICE_COMPROMISED`, once the device integrity check refused card payments on this device
+    /// (CONTRACT §16.16): Pay stays disabled, the order is not read, and the error line shows
+    /// `view.deviceNotSupported`.
+    private(set) var deviceRefusal: PayriffError?
+    /// Whether `DEVICE_COMPROMISED` was reported through `onResult`; it is reported once.
+    private(set) var reportedDeviceRefusal = false
 
     init(strings: CardStrings) {
         self.strings = strings
@@ -43,27 +51,30 @@ struct PaymentViewState: Equatable {
         }
     }
 
-    /// The Pay button's text: `view.pay`, then the amount and the currency once the order is
-    /// loaded ("Pay 1.02 AZN"); `view.pay` alone while it loads.
+    /// The Pay button's text: `view.pay` (or the style's ``payButtonLabel``), then the amount and
+    /// the currency once the order is loaded ("Pay 1.02 AZN"); the word alone while it loads.
     var payTitle: String {
-        let pay = strings.view(.pay)
+        // A blank label counts as none (CONTRACT §16.14).
+        let pay = Self.nonBlank(payButtonLabel) ?? strings.view(.pay)
         guard let order = loadedOrder, let amount = order.amount else { return pay }
         let currency = order.currency?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return [pay, Self.amountText(amount), currency].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    /// Whether Pay can be tapped: the order is payable and was not paid from this view, every
-    /// field is valid and no payment runs. Otherwise the button is shown at 50% opacity.
+    /// Whether Pay can be tapped: the device may pay by card, the order is payable and was not
+    /// paid from this view, every field is valid and no payment runs. Otherwise the button is
+    /// shown at 50% opacity.
     var isPayEnabled: Bool {
-        guard case .payable = order, !isFinished, paymentError == nil else { return false }
+        guard deviceRefusal == nil, case .payable = order, !isFinished, paymentError == nil else { return false }
         return isFormComplete && !isPaying
     }
 
-    /// The error line under the button: why the order cannot be paid (`retrieveOrder`'s error
-    /// message, `view.notPayable` in the view's language for an order that loaded but cannot be
-    /// paid by card, or the error that ended a payment); `nil` while the order loads or can be
-    /// paid (CONTRACT §16.14).
+    /// The error line under the button: `view.deviceNotSupported` on a compromised device, else
+    /// why the order cannot be paid (`retrieveOrder`'s error message, `view.notPayable` in the
+    /// view's language for an order that loaded but cannot be paid by card, or the error that
+    /// ended a payment); `nil` while the order loads or can be paid (CONTRACT §16.14, §16.16).
     var errorMessage: String? {
+        if deviceRefusal != nil { return strings.view(.deviceNotSupported) }
         if let paymentError { return message(of: paymentError) }
         switch order {
         case .loading, .payable:
@@ -76,8 +87,10 @@ struct PaymentViewState: Equatable {
     }
 
     /// Whether the order should be loaded (again) when the view appears: it was never loaded, or
-    /// loading failed with an error that is not fatal, such as `NETWORK_ERROR`.
+    /// loading failed with an error that is not fatal, such as `NETWORK_ERROR`. Never on a device
+    /// that was refused.
     var needsOrder: Bool {
+        guard deviceRefusal == nil else { return false }
         switch order {
         case .loading: return true
         case .failed(let error): return !error.isFatal
@@ -92,10 +105,24 @@ struct PaymentViewState: Equatable {
         paymentError = nil
     }
 
-    /// The view now pays another order; a fatal error of the previous one does not count.
+    /// The view now pays another order; a fatal error or a device refusal of the previous one does
+    /// not count. The device is checked again before the new order is read.
     mutating func orderDidChange() {
         reportedFatalError = false
+        deviceRefusal = nil
+        reportedDeviceRefusal = false
         orderWillLoad()
+    }
+
+    /// The device integrity check refused card payments when the view appeared (CONTRACT §16.16).
+    ///
+    /// - Returns: The result to report through `onResult`: `failed(DEVICE_COMPROMISED)`, only the
+    ///   first time.
+    mutating func deviceWasRefused(_ error: PayriffError) -> PayriffResult? {
+        deviceRefusal = error
+        guard !reportedDeviceRefusal else { return nil }
+        reportedDeviceRefusal = true
+        return .failed(error)
     }
 
     /// Takes `retrieveOrder`'s answer.
@@ -124,12 +151,19 @@ struct PaymentViewState: Equatable {
     ///
     /// A result with a status (success, declined, cancelled, pending) ends the view's payments. A
     /// fatal error or `ORDER_NOT_PAYABLE` means the order cannot be paid any more: its message
-    /// goes under the button. Any other failure (an invalid form, a payment Payriff refused, a
-    /// network error) leaves Pay as it was, so the customer can try again.
+    /// goes under the button. `DEVICE_COMPROMISED` refuses the device as when the view appears.
+    /// Any other failure (an invalid form, a payment Payriff refused, a network error) leaves Pay
+    /// as it was, so the customer can try again.
     mutating func paymentDidFinish(_ result: PayriffResult) {
         isPaying = false
         guard case .failed(let error) = result else {
             isFinished = true
+            return
+        }
+        if error.code == .deviceCompromised {
+            // Already reported through onResult with the payment's result.
+            deviceRefusal = error
+            reportedDeviceRefusal = true
             return
         }
         if error.isFatal || error.code == .orderNotPayable {
@@ -159,5 +193,11 @@ struct PaymentViewState: Equatable {
         formatter.maximumFractionDigits = 2
         formatter.minimumIntegerDigits = 1
         return formatter.string(from: rounded as NSDecimalNumber) ?? "\(rounded)"
+    }
+
+    /// `text` without surrounding white space, or `nil` when it is `nil` or blank (CONTRACT §16.14).
+    static func nonBlank(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 }

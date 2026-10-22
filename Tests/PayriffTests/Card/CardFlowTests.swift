@@ -139,12 +139,72 @@ struct CardFlowTests {
             orderId: "o1",
             card: CardFlowHarness.card,
             apiHost: "api.payriff.com",
-            dependencies: CardPaymentFlow.Dependencies(client: client, clock: FakeClock(), encrypt: { _ in throw CardCryptoError.randomUnavailable }),
+            dependencies: CardPaymentFlow.Dependencies(
+                client: client,
+                clock: FakeClock(),
+                encrypt: { _ in throw CardCryptoError.randomUnavailable },
+                checkDevice: { nil }
+            ),
             ui: ui
         )
         let result = await flow.run()
         #expect(result.error?.code == .unknown)
         #expect(api.routes == [.order])
+    }
+
+    // MARK: Device integrity (CONTRACT §16.16)
+
+    /// A device integrity check for the flow that answers `refusal` and records what had been
+    /// sent each time it ran.
+    @MainActor
+    final class DeviceCheck {
+        let refusal: PayriffError?
+        var api: RoutedClientAPI?
+        private(set) var sentWhenChecked: [[RoutedClientAPI.Route]] = []
+
+        init(refusal: PayriffError?) {
+            self.refusal = refusal
+        }
+
+        func run() -> PayriffError? {
+            sentWhenChecked.append(api?.routes ?? [])
+            return refusal
+        }
+    }
+
+    @Test("Right before the card is encrypted the device is checked again: a refusal ends the flow with DEVICE_COMPROMISED, nothing is paid")
+    func deviceRefusedBeforeEncryption() async throws {
+        let check = DeviceCheck(refusal: .deviceCompromised)
+        let harness = CardFlowHarness([.order: [Bodies.order()], .pay: [Bodies.checkStatus]], checkDevice: { check.run() })
+        check.api = harness.api
+        let result = try await harness.run()
+        #expect(result == .failed(.deviceCompromised))
+        #expect(result.error?.isFatal == false && result.error?.isRetryable == false)
+        #expect(check.sentWhenChecked == [[.order]], "once, after the order loaded and before anything else")
+        #expect(harness.api.routes == [.order], "nothing paid")
+        #expect(harness.encryptions == 0, "the card was never encrypted")
+        #expect(!harness.flow.holdsCardDetails, "the card was dropped")
+        #expect(harness.ui.events.isEmpty)
+    }
+
+    @Test("A clean device: the check runs once per payment, then the card is encrypted and paid")
+    func deviceCheckedOncePerPayment() async throws {
+        let check = DeviceCheck(refusal: nil)
+        let harness = CardFlowHarness(
+            [.order: [Bodies.order()], .pay: [Bodies.checkStatus], .status: [Bodies.status("APPROVED")]],
+            checkDevice: { check.run() }
+        )
+        check.api = harness.api
+        #expect(try await harness.run() == .success(Self.paid()))
+        #expect(check.sentWhenChecked == [[.order]])
+        #expect(harness.encryptions == 1)
+        #expect(harness.api.routes == [.order, .pay, .status])
+
+        // An order that cannot be paid ends before the check: there is nothing to encrypt.
+        let notPayableCheck = DeviceCheck(refusal: .deviceCompromised)
+        let notPayable = CardFlowHarness([.order: [Bodies.order(status: "APPROVED")]], checkDevice: { notPayableCheck.run() })
+        #expect(try await notPayable.run().error?.code == .orderNotPayable)
+        #expect(notPayableCheck.sentWhenChecked.isEmpty)
     }
 
     // MARK: Status polling (CONTRACT §16.7 step 5)

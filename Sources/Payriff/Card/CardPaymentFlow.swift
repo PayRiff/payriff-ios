@@ -29,8 +29,9 @@ protocol CardFlowUI: AnyObject {
 }
 
 /// The card payment after the form was validated (CONTRACT §16.7 steps 2–5), independent of
-/// UIKit: load the order, encrypt and `POST /pay`, run `nextAction` (3-D Secure in the sheet or
-/// in hidden web views), then resolve the status. ``run()`` returns exactly one result.
+/// UIKit: load the order, check the device (CONTRACT §16.16), encrypt and `POST /pay`, run
+/// `nextAction` (3-D Secure in the sheet or in hidden web views), then resolve the status.
+/// ``run()`` returns exactly one result.
 ///
 /// While the 3DS sheet is up, the flow is the sheet's ``SheetFlowHandling`` and decides its
 /// navigations with ``ThreeDSNavigator`` (CONTRACT §16.8).
@@ -43,17 +44,22 @@ final class CardPaymentFlow: SheetFlowHandling {
         var encrypt: @Sendable (CardDetails) throws -> EncryptedCard
         /// A new idempotency key per pay attempt.
         var makeIdempotencyKey: @Sendable () -> String
+        /// The device integrity check right before the card is encrypted (CONTRACT §16.16): an
+        /// error ends the payment with it. It has no default, so no flow runs without it.
+        var checkDevice: @MainActor @Sendable () -> PayriffError?
 
         init(
             client: ClientAPIClient,
             clock: any PaymentClock,
             encrypt: @escaping @Sendable (CardDetails) throws -> EncryptedCard = { try CardCrypto.encrypt($0) },
-            makeIdempotencyKey: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+            makeIdempotencyKey: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
+            checkDevice: @escaping @MainActor @Sendable () -> PayriffError?
         ) {
             self.client = client
             self.clock = clock
             self.encrypt = encrypt
             self.makeIdempotencyKey = makeIdempotencyKey
+            self.checkDevice = checkDevice
         }
     }
 
@@ -163,6 +169,13 @@ final class CardPaymentFlow: SheetFlowHandling {
             ))
         case .success:
             break
+        }
+
+        // A hooking tool can attach after the payment started: the device is checked again right
+        // before the card is encrypted (CONTRACT §16.16).
+        if let refusal = dependencies.checkDevice() {
+            card = nil
+            return .failed(refusal)
         }
 
         // Step 3: encrypt with fresh key material and POST /pay. Only the ciphertext is kept.

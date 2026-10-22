@@ -19,8 +19,8 @@ let package = Package(
             path: "Sources/Payriff",
             resources: [
                 .copy("Resources/PrivacyInfo.xcprivacy"),
-                // The badges and the logo of PayriffPaymentView (CONTRACT §16.14), as bundle
-                // images in 1x, 2x and 3x. The lock is drawn in code.
+                // The badges and the light and dark logos of PayriffPaymentView (CONTRACT §16.14),
+                // as bundle images in 1x, 2x and 3x. The lock is drawn in code.
                 .process("Resources/PaymentView"),
             ]
         ),

@@ -5,7 +5,8 @@ import UIKit
 import WebKit
 @testable import Payriff
 
-/// The UIKit card form and the 3DS UI pieces (CONTRACT §16.4, §16.5, §16.8).
+/// The UIKit card form, the payment view and the 3DS UI pieces (CONTRACT §16.4, §16.5, §16.8,
+/// §16.14).
 @MainActor
 @Suite("Card form (UIKit)", .serialized)
 struct CardFormTests {
@@ -580,6 +581,218 @@ struct CardFormTests {
         #expect(rgb(lock.keyholeLayer.fillColor.map { UIColor(cgColor: $0) }, .dark) == 0x56BE3D, "the same green in dark mode")
     }
 
+    // MARK: - Payment view (CONTRACT §16.14)
+
+    /// The image of the footer's logo, from the text's attachment.
+    private func logoImage(_ text: NSAttributedString?) -> NSTextAttachment? {
+        guard let text else { return nil }
+        var attachment: NSTextAttachment?
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, _, stop in
+            if let value = value as? NSTextAttachment {
+                attachment = value
+                stop.pointee = true
+            }
+        }
+        return attachment
+    }
+
+    @Test("The footer shows payriff-logo in light mode and payriff-logo-dark in dark mode, and switches with the appearance")
+    func paymentViewDarkLogo() throws {
+        let light = try #require(PaymentViewAsset.payriffLogo.image?.pngData())
+        let dark = try #require(PaymentViewAsset.payriffLogoDark.image?.pngData())
+        #expect(light != dark)
+
+        let view = PayriffPaymentView(orderId: "o1", clientSecret: "pr_cs_test", language: .en)
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 800)
+        for (style, expected) in [(UIUserInterfaceStyle.light, light), (.dark, dark), (.light, light)] {
+            view.overrideUserInterfaceStyle = style
+            if #available(iOS 17.0, *) { view.updateTraitsIfNeeded() }
+            view.layoutIfNeeded()
+            #expect(view.traitCollection.userInterfaceStyle == style)
+            let attachment = try #require(logoImage(view.poweredByLabel.attributedText), "\(style.rawValue)")
+            #expect(attachment.image?.pngData() == expected, "the label follows the appearance: \(style.rawValue)")
+            #expect(attachment.bounds.size == CGSize(width: 82, height: 16))
+            #expect(logoImage(view.poweredByText())?.image?.pngData() == expected)
+        }
+        #expect(view.poweredByLabel.accessibilityLabel == "Powered by Payriff", "VoiceOver reads the text, in both modes")
+    }
+
+    @Test("payButtonLabel and secureNoteText replace the localized Pay word and secure line; nil brings them back")
+    func paymentViewTextOverrides() {
+        var style = PayriffPaymentViewStyle()
+        style.payButtonLabel = "Pay now"
+        style.secureNoteText = "Secured by Payriff"
+        let view = PayriffPaymentView(orderId: "o1", clientSecret: "pr_cs_test", language: .az, style: style)
+        #expect(view.payButton.title == "Pay now", "the label alone while the order loads")
+        #expect(view.payButton.accessibilityLabel == "Pay now")
+        #expect(view.secureLabel.text == "Secured by Payriff")
+        view.language = .ru
+        #expect(view.payButton.title == "Pay now" && view.secureLabel.text == "Secured by Payriff", "shown as they are in every language")
+
+        view.style.payButtonLabel = nil
+        view.style.secureNoteText = nil
+        #expect(view.payButton.title == "Оплатить")
+        #expect(view.secureLabel.text == "Безопасная оплата по PCI DSS")
+        view.language = .en
+        #expect(view.payButton.title == "Pay" && view.secureLabel.text == "Proceed securely by PCI DSS")
+        #expect(PayriffPaymentViewStyle().payButtonLabel == nil && PayriffPaymentViewStyle().secureNoteText == nil, "the defaults")
+    }
+
+    /// The payment view laid out at `width` × `height`.
+    private func paymentView(width: CGFloat = 390, height: CGFloat, language: PayriffLanguage = .en, style: PayriffPaymentViewStyle = PayriffPaymentViewStyle()) -> PayriffPaymentView {
+        let view = PayriffPaymentView(orderId: "o1", clientSecret: "pr_cs_test", language: language, style: style)
+        view.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        view.layoutIfNeeded()
+        return view
+    }
+
+    /// The footer's bottom edge in the scroll view's content.
+    private func footerBottom(_ view: PayriffPaymentView) -> CGFloat {
+        view.poweredByLabel.convert(view.poweredByLabel.bounds, to: view.scrollView).maxY
+    }
+
+    @Test("fittingHeight(forWidth:): a view that tall shows everything without scrolling, one point less scrolls")
+    func paymentViewFittingHeight() {
+        let height = paymentView(height: 2000).fittingHeight(forWidth: 390)
+        #expect(height > 300 && height == height.rounded(), "whole points")
+
+        let fitted = paymentView(height: height)
+        #expect(fitted.scrollView.contentSize.height == height, "no scrolling")
+        #expect(footerBottom(fitted) == height - 20, "the footer ends at the bottom padding")
+        #expect(fitted.payButton.bounds.height == 44)
+        #expect(fitted.laidOutFittingHeight == height)
+
+        let short = paymentView(height: height - 1)
+        #expect(short.scrollView.contentSize.height > short.scrollView.bounds.height, "the content keeps its height and scrolls")
+        #expect(short.payButton.bounds.height == 44)
+    }
+
+    @Test("With room to spare, the gap goes above the footer; the Pay button and the other parts keep their heights")
+    func paymentViewSpareRoom() {
+        let fitted = paymentView(height: 2000)
+        let height = fitted.fittingHeight(forWidth: 390)
+        for extra: CGFloat in [0, 1, 200, 1000] {
+            let view = paymentView(height: height + extra)
+            #expect(view.payButton.bounds.height == 44, "\(extra) spare points")
+            #expect(view.form.bounds.height == fitted.form.bounds.height)
+            #expect(footerBottom(view) == height + extra - 20, "the footer stays at the bottom")
+            #expect(view.laidOutFittingHeight == height)
+        }
+    }
+
+    @Test("The fitting height follows the style (hidden parts, padding), not the view's own height")
+    func paymentViewFittingHeightFollowsStyle() {
+        let base = paymentView(height: 900).fittingHeight(forWidth: 390)
+
+        var noBadges = PayriffPaymentViewStyle()
+        noBadges.showBadges = false
+        let badgesAndGap: CGFloat = 28 + 20
+        #expect(base - paymentView(height: 900, style: noBadges).fittingHeight(forWidth: 390) == badgesAndGap, "the badges and the 20 above the secure line")
+
+        var noFooter = PayriffPaymentViewStyle()
+        noFooter.showPoweredBy = false
+        let footer = paymentView(height: 900).poweredByLabel.bounds.height
+        #expect(base - paymentView(height: 900, style: noFooter).fittingHeight(forWidth: 390) == 24 + footer)
+
+        var padded = PayriffPaymentViewStyle()
+        padded.padding = UIEdgeInsets(top: 30, left: 30, bottom: 40, right: 30)
+        #expect(paymentView(height: 900, style: padded).fittingHeight(forWidth: 390) == base + 30)
+
+        #expect(paymentView(height: 300).fittingHeight(forWidth: 390) == base, "the view's own height does not count")
+    }
+
+    @Test(
+        "fittingHeight(forWidth:) equals the laid-out height at other widths and languages, also with a secure line that wraps",
+        arguments: [PayriffLanguage.en, .az, .ru]
+    )
+    func paymentViewFittingHeightMatchesLayout(language: PayriffLanguage) {
+        var wrapping = PayriffPaymentViewStyle()
+        wrapping.secureNoteText = String(repeating: "Your card is encrypted on this device. ", count: 4)
+        for width: CGFloat in [300, 390, 744] {
+            let view = paymentView(width: width, height: 3000, language: language)
+            #expect(view.fittingHeight(forWidth: width) == view.laidOutFittingHeight, "\(language) \(width)")
+            let wrapped = paymentView(width: width, height: 3000, language: language, style: wrapping)
+            #expect(wrapped.fittingHeight(forWidth: width) == wrapped.laidOutFittingHeight, "\(language) \(width), wrapped")
+            #expect(wrapped.secureLabel.bounds.height > 2 * PayriffPaymentView.secondaryFontSize, "the secure line wraps")
+            #expect(wrapped.fittingHeight(forWidth: width) > view.fittingHeight(forWidth: width))
+        }
+    }
+
+    /// Lays `view` out again after a change. A view outside a window lays out only from its root;
+    /// in a window UIKit does this by itself.
+    private func relayout(_ view: UIView) {
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+    }
+
+    @Test("onFittingHeightChange reports the fitting height after the first layout and on every change, once per change")
+    func paymentViewReportsFittingHeight() {
+        let view = PayriffPaymentView(orderId: "o1", clientSecret: "pr_cs_test", language: .en)
+        var reported: [CGFloat] = []
+        view.onFittingHeightChange = { reported.append($0) }
+        view.layoutIfNeeded()
+        #expect(reported.isEmpty, "no width yet")
+
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 900)
+        view.layoutIfNeeded()
+        let height = view.fittingHeight(forWidth: 390)
+        #expect(reported == [height])
+        relayout(view)
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 500)
+        relayout(view)
+        #expect(reported == [height], "the same height is not reported again; the view's own height does not count")
+
+        let badgesAndGap: CGFloat = 28 + 20
+        view.style.showBadges = false
+        relayout(view)
+        #expect(reported == [height, height - badgesAndGap])
+        view.style.secureNoteText = String(repeating: "Your card is encrypted on this device. ", count: 4)
+        relayout(view)
+        #expect(reported.count == 3 && reported[2] > height - badgesAndGap, "a longer secure line")
+        #expect(reported.last == view.fittingHeight(forWidth: 390))
+        view.style = PayriffPaymentViewStyle()
+        relayout(view)
+        #expect(reported.count == 4 && reported.last == height)
+        view.frame = CGRect(x: 0, y: 0, width: 200, height: 500)
+        relayout(view)
+        #expect(reported.last == view.fittingHeight(forWidth: 200), "another width")
+
+        let count = reported.count
+        view.onFittingHeightChange = nil
+        view.style.showPoweredBy = false
+        relayout(view)
+        #expect(reported.count == count, "no handler, no call")
+    }
+
+    @Test("PayriffPaymentScreen.onFittingHeightChange gives its action to the view; without it the view reports nothing")
+    func paymentScreenFittingHeight() {
+        var reported: [CGFloat] = []
+        let screen = PayriffPaymentScreen(orderId: "o1", clientSecret: "pr_cs_test", language: .en) { _ in }
+            .onFittingHeightChange { reported.append($0) }
+        let view = screen.makeView()
+        screen.configure(view)
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 900)
+        view.layoutIfNeeded()
+        #expect(reported == [view.fittingHeight(forWidth: 390)])
+
+        let plain = PayriffPaymentScreen(orderId: "o1", clientSecret: "pr_cs_test") { _ in }
+        #expect(plain.fittingHeightAction == nil)
+        plain.configure(view)
+        #expect(view.onFittingHeightChange == nil)
+    }
+
+    @Test("A custom sheet detent from fittingHeight(forWidth:) resolves to the view's height, at most the sheet's maximum")
+    func paymentViewSheetDetent() throws {
+        let paymentView = PayriffPaymentView(orderId: "o1", clientSecret: "pr_cs_test", language: .en)
+        let detent = UISheetPresentationController.Detent.custom { [weak paymentView] context in
+            guard let paymentView else { return nil }
+            return min(paymentView.fittingHeight(forWidth: 390), context.maximumDetentValue)
+        }
+        let height = paymentView.fittingHeight(forWidth: 390)
+        #expect(detent.resolvedValue(in: DetentContext(maximumDetentValue: 2000)) == height)
+        #expect(detent.resolvedValue(in: DetentContext(maximumDetentValue: 300)) == 300, "never taller than the sheet can be")
+    }
+
     @Test("collectForPayment shows the errors; the privacy cover follows the scene; processing locks the form")
     func collectCoverAndProcessing() throws {
         let form = PayriffCardForm(showsHolder: true, language: .ru)
@@ -730,5 +943,16 @@ struct CardFormTests {
 @MainActor
 private struct NoURLOpener: ExternalURLOpening {
     func open(_ url: URL) {}
+}
+
+/// What a sheet tells a custom detent: here only its maximum.
+@MainActor
+private final class DetentContext: NSObject, UISheetPresentationControllerDetentResolutionContext {
+    let containerTraitCollection = UITraitCollection(userInterfaceIdiom: .phone)
+    let maximumDetentValue: CGFloat
+
+    init(maximumDetentValue: CGFloat) {
+        self.maximumDetentValue = maximumDetentValue
+    }
 }
 #endif

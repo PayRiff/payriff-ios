@@ -249,7 +249,7 @@ enum CardCrypto {
     }
 }
 
-/// The few DER structures the card flow needs.
+/// The few DER structures the card flow and certificate pinning need.
 enum DER {
     /// The DER of the `rsaEncryption` algorithm OID, 1.2.840.113549.1.1.1.
     private static let rsaEncryptionOID: [UInt8] = [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01]
@@ -257,6 +257,8 @@ enum DER {
     struct Element {
         let tag: UInt8
         let contents: ArraySlice<UInt8>
+        /// The whole element as encoded: tag, length and contents.
+        let encoded: ArraySlice<UInt8>
     }
 
     /// Reads one TLV from the start of `bytes`; returns it and the bytes after it.
@@ -279,7 +281,8 @@ enum DER {
         }
         guard length >= 0, bytes.endIndex - index >= length else { return nil }
         let contents = bytes[index..<(index + length)]
-        return (Element(tag: tag, contents: contents), bytes[(index + length)...])
+        let encoded = bytes[bytes.startIndex..<(index + length)]
+        return (Element(tag: tag, contents: contents, encoded: encoded), bytes[(index + length)...])
     }
 
     /// The elements of a constructed value's contents.

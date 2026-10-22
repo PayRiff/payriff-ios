@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Sends HTTP requests. Abstracted so tests can use local fakes instead of the network.
 protocol PayriffHTTPTransport: Sendable {
@@ -21,10 +22,48 @@ extension PayriffHTTPTransport {
     }
 }
 
-/// Refuses every HTTP redirect of the task it is attached to; the task then finishes with the
-/// 3xx response itself.
-final class RedirectRefusal: NSObject, URLSessionTaskDelegate, Sendable {
-    static let shared = RedirectRefusal()
+/// The delegate of a task of ``URLSessionTransport``. Each request gets its own, so a refused
+/// certificate is known for that request.
+///
+/// - It pins Payriff's certificates (CONTRACT §16.15, ``CertificatePinning``): a server-trust
+///   challenge of a Client API host is accepted only when the platform trusts the chain for the
+///   host and the chain has a pinned key. Otherwise the connection is cancelled during the TLS
+///   handshake, before anything is sent.
+/// - Without `followsRedirects` it refuses every HTTP redirect; the task then finishes with the
+///   3xx response itself.
+final class TransportTaskDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    let followsRedirects: Bool
+    private let refused = OSAllocatedUnfairLock(initialState: false)
+
+    init(followsRedirects: Bool) {
+        self.followsRedirects = followsRedirects
+    }
+
+    /// Whether this delegate refused a server certificate.
+    var refusedServerCertificate: Bool {
+        refused.withLock { $0 }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        switch CertificatePinning.decide(challenge) {
+        case .defaultHandling:
+            completionHandler(.performDefaultHandling, nil)
+        case .accept(let trust):
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        case .refuse(let verdict):
+            refused.withLock { $0 = true }
+            let host = challenge.protectionSpace.host
+            Log.warning(verdict == .notPinned
+                ? "The server certificate of \(host) has no pinned key (a proxy or another CA); the connection was refused before anything was sent."
+                : "The server certificate of \(host) is not trusted for the host; the connection was refused before anything was sent.")
+            completionHandler(.cancelAuthenticationChallenge, nil)
+        }
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -33,9 +72,14 @@ final class RedirectRefusal: NSObject, URLSessionTaskDelegate, Sendable {
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
-        completionHandler(nil)
+        completionHandler(followsRedirects ? request : nil)
     }
 }
+
+/// Thrown by ``URLSessionTransport`` when ``TransportTaskDelegate`` refused the server's
+/// certificate (CONTRACT §16.15). Nothing was sent; the Client API maps it to a `NETWORK_ERROR`
+/// that is not retryable.
+struct CertificatePinningError: Error, Sendable, Equatable {}
 
 /// Thrown by ``URLSessionTransport`` when a response body exceeds
 /// ``URLSessionTransport/maximumBodySize``. The Client API maps it like any other failed
@@ -45,7 +89,9 @@ struct ResponseTooLargeError: Error, Sendable, Equatable {
     let httpStatus: Int?
 }
 
-/// The production transport: an ephemeral `URLSession` (no cache, no cookies on disk).
+/// The production transport: an ephemeral `URLSession` (no cache, no cookies on disk) whose
+/// connections to the Client API hosts are pinned (CONTRACT §16.15): every task gets a
+/// ``TransportTaskDelegate``.
 struct URLSessionTransport: PayriffHTTPTransport {
     static let shared = URLSessionTransport(session: makeSession())
 
@@ -56,29 +102,35 @@ struct URLSessionTransport: PayriffHTTPTransport {
     let session: URLSession
 
     func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        try await send(request, delegate: nil)
+        try await send(request, delegate: TransportTaskDelegate(followsRedirects: true))
     }
 
     func sendWithoutRedirects(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        try await send(request, delegate: RedirectRefusal.shared)
+        try await send(request, delegate: TransportTaskDelegate(followsRedirects: false))
     }
 
-    private func send(_ request: URLRequest, delegate: (any URLSessionTaskDelegate)?) async throws -> (Data, URLResponse) {
-        let (bytes, response) = try await session.bytes(for: request, delegate: delegate)
-        let status = (response as? HTTPURLResponse)?.statusCode
-        if response.expectedContentLength > Self.maximumBodySize {
-            bytes.task.cancel()
-            throw ResponseTooLargeError(httpStatus: status)
-        }
-        var body = Data()
-        for try await byte in bytes {
-            guard body.count < Self.maximumBodySize else {
+    private func send(_ request: URLRequest, delegate: TransportTaskDelegate) async throws -> (Data, URLResponse) {
+        do {
+            let (bytes, response) = try await session.bytes(for: request, delegate: delegate)
+            let status = (response as? HTTPURLResponse)?.statusCode
+            if response.expectedContentLength > Self.maximumBodySize {
                 bytes.task.cancel()
                 throw ResponseTooLargeError(httpStatus: status)
             }
-            body.append(byte)
+            var body = Data()
+            for try await byte in bytes {
+                guard body.count < Self.maximumBodySize else {
+                    bytes.task.cancel()
+                    throw ResponseTooLargeError(httpStatus: status)
+                }
+                body.append(byte)
+            }
+            return (body, response)
+        } catch {
+            // The refused certificate cancelled the task; URLSession reports that as `cancelled`.
+            if delegate.refusedServerCertificate { throw CertificatePinningError() }
+            throw error
         }
-        return (body, response)
     }
 
     private static func makeSession() -> URLSession {
@@ -91,6 +143,8 @@ struct URLSessionTransport: PayriffHTTPTransport {
         configuration.timeoutIntervalForRequest = ClientAPIClient.postTimeout
         configuration.timeoutIntervalForResource = ClientAPIClient.postTimeout
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        // Every task has a delegate of its own (send above). The session's delegate pins and
+        // refuses redirects too, for a task that would have none.
+        return URLSession(configuration: configuration, delegate: TransportTaskDelegate(followsRedirects: false), delegateQueue: nil)
     }
 }

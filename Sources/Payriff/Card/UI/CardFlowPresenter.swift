@@ -172,11 +172,16 @@ extension Payriff {
     /// Pays an order with the card in `form` (CONTRACT §16.7), using the publishable key and the
     /// order's client secret. Your server created the order and gave the app both values.
     ///
-    /// 1. The form is validated. Invalid fields show their errors and the call returns
+    /// 1. The device is checked (CONTRACT §16.16). On a jailbroken device, or when a hooking tool
+    ///    such as Frida or, in an App Store or TestFlight build, a debugger is found, the call
+    ///    returns `.failed` with `DEVICE_COMPROMISED` and nothing is sent, unless
+    ///    ``PayriffConfig/allowCompromisedDevices`` is on.
+    /// 2. The form is validated. Invalid fields show their errors and the call returns
     ///    `.failed` with `VALIDATION_FAILED` and ``PayriffError/fields``; nothing is sent.
-    /// 2. The order is loaded; it must be payable by card (`ORDER_NOT_PAYABLE` otherwise).
-    /// 3. The card is encrypted on the device and sent. The form is locked and shows progress.
-    /// 4. 3-D Secure runs in Payriff's sheet (or in the background for the 3DS method), then the
+    /// 3. The order is loaded; it must be payable by card (`ORDER_NOT_PAYABLE` otherwise).
+    /// 4. The device is checked again, then the card is encrypted on the device and sent over a
+    ///    pinned connection (CONTRACT §16.15). The form is locked and shows progress.
+    /// 5. 3-D Secure runs in Payriff's sheet (or in the background for the 3DS method), then the
     ///    status is polled every 2.5 s for up to 120 s.
     ///
     /// The result drives your UI only; fulfil the order after your backend confirms it.
@@ -241,6 +246,12 @@ extension Payriff {
         }
 
         guard activeCardFlow == nil, !form.isProcessing else { return fail(.paymentInProgress) }
+        // CONTRACT §16.16: the device is checked before anything is sent, and again right before
+        // the card is encrypted, with the configuration the payment started with.
+        let allowsCompromisedDevices = configuration?.allowCompromisedDevices ?? false
+        if let refusal = deviceIntegrityError(allowCompromisedDevices: allowsCompromisedDevices) {
+            return fail(refusal)
+        }
         let context: CardContext
         switch cardContext(orderId: orderId, clientSecret: clientSecret) {
         case .failure(let error): return fail(error)
@@ -261,7 +272,11 @@ extension Payriff {
             orderId: context.orderId,
             card: card,
             apiHost: context.apiHost,
-            dependencies: CardPaymentFlow.Dependencies(client: context.client, clock: services.clock),
+            dependencies: CardPaymentFlow.Dependencies(
+                client: context.client,
+                clock: services.clock,
+                checkDevice: { deviceIntegrityError(allowCompromisedDevices: allowsCompromisedDevices) }
+            ),
             ui: ui
         )
         activeCardFlow = flow

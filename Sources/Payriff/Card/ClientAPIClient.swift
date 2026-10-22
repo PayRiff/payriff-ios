@@ -95,6 +95,9 @@ enum ClientAppID {
 ///   A retried `/pay` resends the identical bytes with the same idempotency key.
 /// - Redirects are never followed: they would carry the keys, `x-secret-key` and the encrypted
 ///   card to a host outside the host table. A 3xx response is a failed response.
+/// - The production transport pins Payriff's certificates (CONTRACT §16.15). A refused
+///   certificate is a `NETWORK_ERROR` that is not retryable ("Payriff's server certificate could
+///   not be verified."); nothing was sent, and `/pay` is not retried.
 /// - Nothing secret is logged. Headers and bodies are logged only in debug builds, with every
 ///   secret redacted (``HTTPLog``).
 struct ClientAPIClient: Sendable {
@@ -238,7 +241,8 @@ struct ClientAPIClient: Sendable {
                 body = data
             } catch {
                 let mapped = Self.transportError(error)
-                if mapped.code == .networkError, retryNetworkOnce, !retriedNetwork, !(error is CancellationError) {
+                // A refused certificate is not retryable: nothing was sent, and it would be refused again.
+                if mapped.code == .networkError, mapped.isRetryable, retryNetworkOnce, !retriedNetwork, !(error is CancellationError) {
                     retriedNetwork = true
                     Log.warning("\(method) \(path) failed (\(mapped.code.rawValue)); retrying once in \(Int(Self.payNetworkRetryDelay)) s with the same idempotency key.")
                     guard await sleep(Self.payNetworkRetryDelay) else { return .failure(mapped) }
@@ -332,10 +336,14 @@ struct ClientAPIClient: Sendable {
         }
     }
 
-    /// No response: `NETWORK_ERROR`; an oversized body counts as a failed response.
+    /// No response: `NETWORK_ERROR`; an oversized body counts as a failed response. A refused
+    /// server certificate (CONTRACT §16.15) is a `NETWORK_ERROR` that is not retryable.
     static func transportError(_ error: any Error) -> PayriffError {
         if let tooLarge = error as? ResponseTooLargeError {
             return mapError(httpStatus: tooLarge.httpStatus, body: Data())
+        }
+        if error is CertificatePinningError {
+            return PayriffError(code: .networkError, message: CertificatePinning.failureMessage, isRetryable: false, cause: error)
         }
         if let urlError = error as? URLError {
             switch urlError.code {

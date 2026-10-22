@@ -45,6 +45,16 @@ public struct PayriffConfig: Sendable {
     /// Enables SDK logging (see ``PayriffLogger``). Defaults to `false`.
     public var enableLogging: Bool
 
+    /// Lets card payments run on a compromised device (CONTRACT §16.16). Defaults to `false`.
+    ///
+    /// By default the SDK refuses card payments on a jailbroken device and when a hooking tool such
+    /// as Frida or, in an App Store or TestFlight build, a debugger is found: they fail with
+    /// `DEVICE_COMPROMISED`, and ``PayriffPaymentView`` says that card payments aren't available on
+    /// this device. With `true` the SDK only logs a warning that names what it found. Set it only
+    /// for development on jailbroken test devices, for example in debug builds, never in an app you
+    /// ship.
+    public var allowCompromisedDevices: Bool
+
     /// Creates a configuration.
     ///
     /// - Parameters:
@@ -52,16 +62,20 @@ public struct PayriffConfig: Sendable {
     ///   - environment: The environment. Defaults to production.
     ///   - language: The default language, or `nil` for the device language.
     ///   - enableLogging: Whether the SDK emits log entries.
+    ///   - allowCompromisedDevices: Whether card payments run on a jailbroken or hooked device
+    ///     (development only). Defaults to `false`.
     public init(
         publishableKey: String? = nil,
         environment: PayriffEnvironment = .production,
         language: PayriffLanguage? = nil,
-        enableLogging: Bool = false
+        enableLogging: Bool = false,
+        allowCompromisedDevices: Bool = false
     ) {
         self.publishableKey = publishableKey
         self.environment = environment
         self.language = language
         self.enableLogging = enableLogging
+        self.allowCompromisedDevices = allowCompromisedDevices
     }
 }
 
@@ -108,6 +122,7 @@ extension PayriffConfig: CustomStringConvertible, CustomDebugStringConvertible, 
             RedactedField("environment", environment, text: environment.rawValue),
             RedactedField("language", optional: language?.rawValue),
             RedactedField("enableLogging", enableLogging),
+            RedactedField("allowCompromisedDevices", allowCompromisedDevices),
         ]
     }
 }

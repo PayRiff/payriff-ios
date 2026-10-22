@@ -20,7 +20,10 @@ public struct PayriffError: Error, Sendable, Hashable, LocalizedError, CustomStr
         case unauthorized = "UNAUTHORIZED"
         /// Too many requests (HTTP 429), after the SDK's retries. Fatal: create a new order.
         case rateLimited = "RATE_LIMITED"
-        /// No HTTP response was received: offline, DNS, TLS or timeout.
+        /// No HTTP response was received: offline, DNS, TLS or timeout. When Payriff's server
+        /// certificate fails the SDK's certificate pinning (CONTRACT §16.15), for example behind a
+        /// proxy, it is not retryable, the message is "Payriff's server certificate could not be
+        /// verified." and nothing was sent.
         case networkError = "NETWORK_ERROR"
         /// The card form is not valid; ``PayriffError/fields`` lists the fields. No
         /// request was made.
@@ -40,6 +43,11 @@ public struct PayriffError: Error, Sendable, Hashable, LocalizedError, CustomStr
         /// Payriff answered with a next step the SDK cannot run safely, and the order
         /// status was not final.
         case unexpectedResponse = "UNEXPECTED_RESPONSE"
+        /// The device is jailbroken, or a hooking tool such as Frida or, in an App Store or
+        /// TestFlight build, a debugger was found (CONTRACT §16.16), and
+        /// ``PayriffConfig/allowCompromisedDevices`` is off. Nothing was sent. Not retryable and
+        /// not fatal: the order can still be paid on another device.
+        case deviceCompromised = "DEVICE_COMPROMISED"
         /// Anything else. Never retryable.
         case unknown = "UNKNOWN"
     }
@@ -176,6 +184,12 @@ extension PayriffError {
     static let paymentInProgress = PayriffError(
         code: .paymentInProgress,
         message: "Another Payriff card payment is still running."
+    )
+
+    /// A compromised device (CONTRACT §16.16): not retryable, not fatal.
+    static let deviceCompromised = PayriffError(
+        code: .deviceCompromised,
+        message: "Card payments are not available on this device."
     )
 
     static func network(_ message: String, cause: (any Error)? = nil) -> PayriffError {

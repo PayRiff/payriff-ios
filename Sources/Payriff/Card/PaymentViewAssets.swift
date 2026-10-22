@@ -9,12 +9,19 @@ enum PaymentViewAsset: String, CaseIterable, Sendable {
     case mastercard
     /// The Visa acceptance badge.
     case visa
-    /// The Payriff logo of the "Powered by" footer.
+    /// The Payriff logo of the "Powered by" footer in light mode.
     case payriffLogo = "payriff-logo"
+    /// The Payriff logo of the footer in dark mode: the wordmark in `#E1E4E8`.
+    case payriffLogoDark = "payriff-logo-dark"
 
     /// The badges of the badge row, in order: the brands the SDK accepts. No PCI logo: PCI SSC
     /// does not allow its "PCI ✓" mark (CONTRACT §16.14).
     static let badges: [PaymentViewAsset] = [.mastercard, .visa]
+
+    /// The footer's logo: ``payriffLogo`` in light mode, ``payriffLogoDark`` in dark mode.
+    static func logo(dark: Bool) -> PaymentViewAsset {
+        dark ? .payriffLogoDark : .payriffLogo
+    }
 
     /// The file name without the scale suffix and the extension.
     var name: String { rawValue }
@@ -24,7 +31,7 @@ enum PaymentViewAsset: String, CaseIterable, Sendable {
         switch self {
         case .visa: return CGSize(width: 42, height: 28)
         case .mastercard: return CGSize(width: 43, height: 28)
-        case .payriffLogo: return CGSize(width: 82, height: 16)
+        case .payriffLogo, .payriffLogoDark: return CGSize(width: 82, height: 16)
         }
     }
 
@@ -33,7 +40,7 @@ enum PaymentViewAsset: String, CaseIterable, Sendable {
         switch self {
         case .mastercard: return "Mastercard"
         case .visa: return "Visa"
-        case .payriffLogo: return "Payriff"
+        case .payriffLogo, .payriffLogoDark: return "Payriff"
         }
     }
 }

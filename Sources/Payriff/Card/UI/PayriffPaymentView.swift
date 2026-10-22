@@ -16,6 +16,12 @@ import UIKit
 /// paying; a spinner replaces its title meanwhile. A fatal error, such as an expired client
 /// secret, also goes to ``onResult``, once.
 ///
+/// When the view appears it also checks the device (CONTRACT §16.16). On a jailbroken device, or
+/// when a hooking tool such as Frida or, in an App Store or TestFlight build, a debugger is found,
+/// it says that card payments aren't available on this device, keeps Pay disabled, does not read
+/// the order and passes `failed(DEVICE_COMPROMISED)` to ``onResult`` once, unless
+/// ``PayriffConfig/allowCompromisedDevices`` is on.
+///
 /// Give it the whole screen: it adds the safe area to its padding, scrolls when the keyboard is up
 /// and keeps the footer at the bottom when there is room. Call ``Payriff/configure(_:)`` first.
 ///
@@ -27,6 +33,9 @@ import UIKit
 /// paymentView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 /// view.addSubview(paymentView)
 /// ```
+///
+/// To make a sheet as tall as the view, return ``fittingHeight(forWidth:)`` from a custom detent
+/// and invalidate the detents in ``onFittingHeightChange``.
 ///
 /// ``PayriffPaymentViewStyle`` changes the colours and sizes and hides the badges, the secure line,
 /// the footer or the form's labels. ``PayriffCardForm`` and
@@ -59,13 +68,26 @@ public final class PayriffPaymentView: UIView {
     }
 
     /// Called on the main actor with the result of each payment attempt, and once with a fatal
-    /// error that ends the order (``PayriffError/isFatal``), for example an expired client secret.
+    /// error that ends the order (``PayriffError/isFatal``), for example an expired client secret,
+    /// or with `DEVICE_COMPROMISED` on a compromised device.
     /// The result drives your UI only: fulfil the order after your server confirms it.
     public var onResult: (@MainActor (PayriffResult) -> Void)?
 
     /// The view controller that presents the 3-D Secure sheet. `nil`, the default, uses the
     /// top-most view controller of the view's window.
     public weak var presenter: UIViewController?
+
+    /// Called on the main actor, during layout, with ``fittingHeight(forWidth:)`` at the view's
+    /// width: after the first layout, then whenever it changes, for example when an error line
+    /// appears, the text size or the style changes, or the view gets another width. A sheet sized
+    /// to the view invalidates its detents here:
+    ///
+    /// ```swift
+    /// paymentView.onFittingHeightChange = { [weak sheet] _ in
+    ///     sheet?.animateChanges { sheet?.invalidateDetents() }
+    /// }
+    /// ```
+    public var onFittingHeightChange: (@MainActor (CGFloat) -> Void)?
 
     // MARK: - Parts (internal for tests)
 
@@ -83,8 +105,9 @@ public final class PayriffPaymentView: UIView {
     /// "Powered by" with the Payriff logo in place of the word "Payriff".
     let poweredByLabel = UILabel()
     let scrollView = UIScrollView()
-    private let contentView = UIView()
-    private let contentStack = UIStackView()
+    private let contentView = PaymentViewContentView()
+    /// The form, the Pay button, the error line, the badges and the secure line.
+    let contentStack = UIStackView()
 
     /// The order, the form and the payment, and the rules for what the view shows.
     private(set) var state: PaymentViewState
@@ -95,6 +118,8 @@ public final class PayriffPaymentView: UIView {
     /// How much of the view the keyboard covers, from the bottom.
     private(set) var keyboardOverlap: CGFloat = 0
     private var keyboardObservers: [any NSObjectProtocol] = []
+    /// The fitting height last passed to ``onFittingHeightChange``.
+    private var reportedFittingHeight: CGFloat?
 
     private var stackTop: NSLayoutConstraint!
     private var stackLeading: NSLayoutConstraint!
@@ -105,7 +130,7 @@ public final class PayriffPaymentView: UIView {
     private var footerTop: NSLayoutConstraint!
     private var footerBottom: NSLayoutConstraint!
     private var minimumHeight: NSLayoutConstraint!
-    private var fittingHeight: NSLayoutConstraint!
+    private var fillHeight: NSLayoutConstraint!
 
     // MARK: - Metrics (CONTRACT §16.14)
 
@@ -153,7 +178,8 @@ public final class PayriffPaymentView: UIView {
         buildViews()
         applyStyle()
         if #available(iOS 17.0, *) {
-            registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: PayriffPaymentView, _: UITraitCollection) in
+            // The text size scales the fonts; the appearance picks the footer's logo.
+            registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self]) { (view: PayriffPaymentView, _: UITraitCollection) in
                 view.applyTexts()
             }
         }
@@ -173,6 +199,8 @@ public final class PayriffPaymentView: UIView {
         scrollView.keyboardDismissMode = .interactive
         addSubview(scrollView)
         contentView.translatesAutoresizingMaskIntoConstraints = false
+        // Its subviews change size with the content, so its layout catches every new height.
+        contentView.onLayout = { [weak self] in self?.reportFittingHeightIfChanged() }
         scrollView.addSubview(contentView)
 
         errorLabel.numberOfLines = 0
@@ -222,13 +250,15 @@ public final class PayriffPaymentView: UIView {
         // The footer goes to the bottom when there is room, else 24 below the content.
         footerTop = poweredByLabel.topAnchor.constraint(greaterThanOrEqualTo: contentStack.bottomAnchor, constant: Self.footerSpacing)
         footerBottom = contentView.bottomAnchor.constraint(equalTo: poweredByLabel.bottomAnchor)
-        // Places the footer while it is hidden; never wins over the constraints above.
+        // Places the footer while it is hidden. The weakest constraint of the view: with room to
+        // spare, the gap goes above the footer and no part grows (the Pay button's own compact
+        // height has priority fittingSizeLevel).
         let footerPlacement = poweredByLabel.topAnchor.constraint(equalTo: contentStack.bottomAnchor, constant: Self.footerSpacing)
-        footerPlacement.priority = .fittingSizeLevel
+        footerPlacement.priority = UILayoutPriority(1)
         // At least as tall as what the keyboard leaves visible, and no taller than its content needs.
         minimumHeight = contentView.heightAnchor.constraint(greaterThanOrEqualTo: frame.heightAnchor)
-        fittingHeight = contentView.heightAnchor.constraint(equalTo: frame.heightAnchor)
-        fittingHeight.priority = .defaultLow
+        fillHeight = contentView.heightAnchor.constraint(equalTo: frame.heightAnchor)
+        fillHeight.priority = .defaultLow
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -240,7 +270,7 @@ public final class PayriffPaymentView: UIView {
             contentView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             contentView.widthAnchor.constraint(equalTo: frame.widthAnchor),
             minimumHeight,
-            fittingHeight,
+            fillHeight,
             stackTop,
             stackLeading,
             stackTrailing,
@@ -309,7 +339,7 @@ public final class PayriffPaymentView: UIView {
         footerTrailing.constant = padding.right + safe.right
         footerBottom.constant = bottom
         minimumHeight.constant = -keyboardOverlap
-        fittingHeight.constant = -keyboardOverlap
+        fillHeight.constant = -keyboardOverlap
         scrollView.contentInset.bottom = keyboardOverlap
         scrollView.verticalScrollIndicatorInsets = UIEdgeInsets(top: safe.top, left: 0, bottom: max(safe.bottom, keyboardOverlap), right: 0)
     }
@@ -323,7 +353,8 @@ public final class PayriffPaymentView: UIView {
         super.traitCollectionDidChange(previousTraitCollection)
         // iOS 17 and later use the trait registration of init.
         if #available(iOS 17.0, *) { return }
-        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
+        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory
+            || previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
             applyTexts()
         }
     }
@@ -343,6 +374,7 @@ public final class PayriffPaymentView: UIView {
         poweredByLabel.isHidden = !style.showPoweredBy
         footerTop.isActive = style.showPoweredBy
         footerBottom.isActive = style.showPoweredBy
+        state.payButtonLabel = style.payButtonLabel
         updateSpacing()
         updateInsets()
         applyTexts()
@@ -353,17 +385,19 @@ public final class PayriffPaymentView: UIView {
         CardFormSectionView.scaledFont(.systemFont(ofSize: secondaryFontSize), relativeTo: .caption1)
     }
 
-    /// The texts in the effective language: the Pay title, the secure line and the footer.
+    /// The texts in the effective language (or the style's): the Pay title, the secure line and
+    /// the footer.
     private func applyTexts() {
         state.strings = CardStrings(language: form.effectiveLanguage)
-        secureLabel.text = state.strings.view(.secure)
+        secureLabel.text = PaymentViewState.nonBlank(style.secureNoteText) ?? state.strings.view(.secure)
         poweredByLabel.attributedText = poweredByText()
         poweredByLabel.accessibilityLabel = state.strings.view(.poweredBy)
         render()
     }
 
     /// `view.poweredBy` with the Payriff logo (82×16) where the word "Payriff" is, centred on the
-    /// text: "Powered by [logo]", "[logo] tərəfindən hazırlanıb".
+    /// text: "Powered by [logo]", "[logo] tərəfindən hazırlanıb". The logo follows the view's
+    /// appearance: `payriff-logo`, or `payriff-logo-dark` in dark mode (CONTRACT §16.14).
     func poweredByText() -> NSAttributedString {
         let font = Self.secondaryFont
         let centred = NSMutableParagraphStyle()
@@ -374,10 +408,11 @@ public final class PayriffPaymentView: UIView {
             .paragraphStyle: centred,
         ]
         let strings = state.strings
-        guard let parts = strings.poweredByParts, let logo = PaymentViewAsset.payriffLogo.image else {
+        let asset = PaymentViewAsset.logo(dark: traitCollection.userInterfaceStyle == .dark)
+        guard let parts = strings.poweredByParts, let logo = asset.image else {
             return NSAttributedString(string: strings.view(.poweredBy), attributes: attributes)
         }
-        let size = PaymentViewAsset.payriffLogo.size
+        let size = asset.size
         let attachment = NSTextAttachment()
         attachment.image = logo
         attachment.bounds = CGRect(x: 0, y: ((font.capHeight - size.height) / 2).rounded(), width: size.width, height: size.height)
@@ -387,6 +422,76 @@ public final class PayriffPaymentView: UIView {
         text.append(logoText)
         text.append(NSAttributedString(string: parts.after, attributes: attributes))
         return text
+    }
+
+    // MARK: - Fitting height
+
+    /// The height the view needs at `width` to show all of its content without scrolling: the
+    /// padding, the card form, the Pay button, the error line while it shows, the badges, the
+    /// secure line and the footer. The safe area and the keyboard are not counted: the view adds
+    /// them to its padding when they cover it.
+    ///
+    /// A sheet's custom detent is a height within the sheet's safe area, so this value makes a
+    /// sheet as tall as the view. With the keyboard up the view still scrolls.
+    ///
+    /// ```swift
+    /// let payment = UIViewController()
+    /// payment.view = paymentView
+    /// if let sheet = payment.sheetPresentationController {
+    ///     sheet.detents = [.custom { [weak self, weak paymentView] context in
+    ///         guard let width = self?.view.bounds.width, let paymentView else { return nil }
+    ///         return min(paymentView.fittingHeight(forWidth: width), context.maximumDetentValue)
+    ///     }]
+    ///     paymentView.onFittingHeightChange = { [weak sheet] _ in
+    ///         sheet?.animateChanges { sheet?.invalidateDetents() }
+    ///     }
+    /// }
+    /// present(payment, animated: true)
+    /// ```
+    ///
+    /// - Parameter width: The width the view has or will have; for a sheet on iPhone, the
+    ///   screen's width.
+    /// - Returns: The height in points, rounded up to a whole point.
+    public func fittingHeight(forWidth width: CGFloat) -> CGFloat {
+        let padding = style.padding
+        let contentWidth = max(0, width - padding.left - padding.right - safeAreaInsets.left - safeAreaInsets.right)
+        var height = padding.top + padding.bottom
+        height += contentStack.systemLayoutSizeFitting(
+            CGSize(width: contentWidth, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+        if style.showPoweredBy {
+            height += Self.footerSpacing + poweredByLabel.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude)).height
+        }
+        return Self.wholePoints(height)
+    }
+
+    /// ``fittingHeight(forWidth:)`` at the view's width, read from its layout: the parts keep their
+    /// own heights, and only the gap above the footer grows with the view.
+    var laidOutFittingHeight: CGFloat {
+        let padding = style.padding
+        var height = padding.top + contentStack.bounds.height + padding.bottom
+        if style.showPoweredBy {
+            height += Self.footerSpacing + poweredByLabel.bounds.height
+        }
+        return Self.wholePoints(height)
+    }
+
+    /// `height` rounded up to a whole point, so the content fits in it; a rounding error of the
+    /// layout does not add a point.
+    private static func wholePoints(_ height: CGFloat) -> CGFloat {
+        (height - 0.01).rounded(.up)
+    }
+
+    /// Passes the fitting height to ``onFittingHeightChange`` when it changed. Runs after every
+    /// layout of the content, which follows every change of its height.
+    private func reportFittingHeightIfChanged() {
+        guard let onFittingHeightChange, bounds.width > 0 else { return }
+        let height = laidOutFittingHeight
+        guard height != reportedFittingHeight else { return }
+        reportedFittingHeight = height
+        onFittingHeightChange(height)
     }
 
     // MARK: - State
@@ -426,7 +531,30 @@ public final class PayriffPaymentView: UIView {
         // The configured language may have changed since the view was made.
         applyTexts()
         observeKeyboard()
+        appear()
+    }
+
+    /// The view appeared: the device is checked (CONTRACT §16.16), then the order is read unless
+    /// it is loaded, loading, or failed for good.
+    func appear() {
+        guard deviceMayPay() else { return }
         loadOrderIfNeeded()
+    }
+
+    /// Whether card payments may run on this device. Otherwise the view says so, keeps Pay
+    /// disabled, does not read the order and reports `DEVICE_COMPROMISED` once; it stays so for
+    /// this order.
+    private func deviceMayPay() -> Bool {
+        guard state.deviceRefusal == nil else { return false }
+        let allowsCompromisedDevices = Payriff.configuration?.allowCompromisedDevices ?? false
+        guard let refusal = Payriff.deviceIntegrityError(allowCompromisedDevices: allowsCompromisedDevices) else { return true }
+        // A late answer for the order is dropped.
+        loadGeneration += 1
+        loadTask = nil
+        let report = state.deviceWasRefused(refusal)
+        render()
+        if let report { onResult?(report) }
+        return false
     }
 
     /// Reads the order unless it is loaded, loading, or failed for good (a fatal error).
@@ -461,8 +589,8 @@ public final class PayriffPaymentView: UIView {
         if let fatal { onResult?(fatal) }
     }
 
-    /// Pays another order: the view forgets the previous one and reads the new one when it is on
-    /// screen. ``PayriffPaymentScreen`` calls it when its order changes.
+    /// Pays another order: the view forgets the previous one, checks the device again and reads
+    /// the new one when it is on screen. ``PayriffPaymentScreen`` calls it when its order changes.
     func setOrder(orderId: String, clientSecret: String) {
         guard orderId != self.orderId || clientSecret != self.clientSecret else { return }
         self.orderId = orderId
@@ -472,7 +600,7 @@ public final class PayriffPaymentView: UIView {
         loadTask = nil
         state.orderDidChange()
         render()
-        if window != nil { loadOrder() }
+        if window != nil { appear() }
     }
 
     // MARK: - Pay
@@ -551,6 +679,18 @@ public final class PayriffPaymentView: UIView {
         offset = min(max(0, offset), maximum)
         guard abs(offset - current) > 0.5 else { return }
         scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: offset), animated: animated)
+    }
+}
+
+/// The scrolling content of ``PayriffPaymentView``; tells the view after every layout, so the view
+/// sees each new height of its parts.
+@MainActor
+final class PaymentViewContentView: UIView {
+    var onLayout: (@MainActor () -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?()
     }
 }
 

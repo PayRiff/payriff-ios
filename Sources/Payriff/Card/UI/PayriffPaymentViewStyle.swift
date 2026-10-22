@@ -11,6 +11,7 @@ import UIKit
 /// var style = PayriffPaymentViewStyle()
 /// style.buttonColor = .systemIndigo
 /// style.buttonCornerRadius = 8
+/// style.payButtonLabel = "Pay now"   // "Pay now 1.02 AZN"
 /// style.showPoweredBy = false
 /// style.formStyle.cornerRadius = 8
 ///
@@ -42,6 +43,11 @@ public struct PayriffPaymentViewStyle: Sendable, Equatable {
     /// The corner radius of the Pay button. Defaults to 16.
     public var buttonCornerRadius: CGFloat
 
+    /// The word of the Pay button, in place of "Pay" in the view's language; it is shown as it is
+    /// in every language. The amount and the currency still follow it ("Pay now 1.02 AZN"), and
+    /// it shows alone while the amount is unknown. Defaults to `nil`: "Pay", "Ödə" or "Оплатить".
+    public var payButtonLabel: String?
+
     /// The colour of the "Proceed securely by PCI DSS" line and the "Powered by Payriff" footer.
     /// Defaults to `#76787F`.
     public var secondaryTextColor: UIColor
@@ -52,7 +58,12 @@ public struct PayriffPaymentViewStyle: Sendable, Equatable {
     /// Whether to show the lock and "Proceed securely by PCI DSS". Defaults to `true`.
     public var showSecureNote: Bool
 
-    /// Whether to show "Powered by" and the Payriff logo at the bottom. Defaults to `true`.
+    /// The text next to the lock, in place of "Proceed securely by PCI DSS" in the view's
+    /// language; it is shown as it is in every language. Defaults to `nil`: the localized text.
+    public var secureNoteText: String?
+
+    /// Whether to show "Powered by" and the Payriff logo at the bottom. Defaults to `true`. In
+    /// dark mode the logo's wordmark is light (`#E1E4E8`).
     public var showPoweredBy: Bool
 
     /// The card form inside the view (``PayriffCardForm/style``). Its error colour and error text
@@ -69,9 +80,11 @@ public struct PayriffPaymentViewStyle: Sendable, Equatable {
         buttonTextStyle: PayriffCardFormStyle.TextStyle = PayriffCardFormStyle.TextStyle(size: 16, weight: .semibold),
         buttonHeight: CGFloat = 44,
         buttonCornerRadius: CGFloat = 16,
+        payButtonLabel: String? = nil,
         secondaryTextColor: UIColor = Defaults.secondaryText,
         showBadges: Bool = true,
         showSecureNote: Bool = true,
+        secureNoteText: String? = nil,
         showPoweredBy: Bool = true,
         formStyle: PayriffCardFormStyle = PayriffCardFormStyle()
     ) {
@@ -81,9 +94,11 @@ public struct PayriffPaymentViewStyle: Sendable, Equatable {
         self.buttonTextStyle = buttonTextStyle
         self.buttonHeight = buttonHeight
         self.buttonCornerRadius = buttonCornerRadius
+        self.payButtonLabel = payButtonLabel
         self.secondaryTextColor = secondaryTextColor
         self.showBadges = showBadges
         self.showSecureNote = showSecureNote
+        self.secureNoteText = secureNoteText
         self.showPoweredBy = showPoweredBy
         self.formStyle = formStyle
     }

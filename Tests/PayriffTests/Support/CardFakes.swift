@@ -186,8 +186,16 @@ final class CardFlowHarness {
     let ui = FakeCardFlowUI()
     let flow: CardPaymentFlow
     private(set) var result: PayriffResult?
+    /// How often the card was encrypted.
+    var encryptions: Int { encryptCount.withLock { $0 } }
+    private let encryptCount: OSAllocatedUnfairLock<Int>
 
-    init(_ scripts: [RoutedClientAPI.Route: [RoutedClientAPI.Reply]], clock: FakeClock = FakeClock()) {
+    /// - Parameter checkDevice: The device integrity check before encryption; a clean device by default.
+    init(
+        _ scripts: [RoutedClientAPI.Route: [RoutedClientAPI.Reply]],
+        clock: FakeClock = FakeClock(),
+        checkDevice: @escaping @MainActor @Sendable () -> PayriffError? = { nil }
+    ) {
         api = RoutedClientAPI(scripts)
         self.clock = clock
         let client = ClientAPIClient(
@@ -197,6 +205,8 @@ final class CardFlowHarness {
             transport: api.transport,
             clock: clock
         )
+        let encryptCount = OSAllocatedUnfairLock(initialState: 0)
+        self.encryptCount = encryptCount
         flow = CardPaymentFlow(
             orderId: "o1",
             card: Self.card,
@@ -204,8 +214,12 @@ final class CardFlowHarness {
             dependencies: CardPaymentFlow.Dependencies(
                 client: client,
                 clock: clock,
-                encrypt: { _ in Self.encrypted },
-                makeIdempotencyKey: { Self.idempotencyKey }
+                encrypt: { _ in
+                    encryptCount.withLock { $0 += 1 }
+                    return Self.encrypted
+                },
+                makeIdempotencyKey: { Self.idempotencyKey },
+                checkDevice: checkDevice
             ),
             ui: ui
         )

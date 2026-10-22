@@ -49,6 +49,29 @@ struct PaymentViewStateTests {
         #expect(other.payTitle == "Pay")
     }
 
+    @Test("The style's payButtonLabel replaces view.pay in every language; the amount and currency still follow, and it shows alone while loading (CONTRACT §16.14)")
+    func payButtonLabel() {
+        var state = Self.state(.az)
+        state.payButtonLabel = "Pay now"
+        #expect(state.payTitle == "Pay now", "the label alone while the order loads")
+        _ = state.orderDidLoad(.success(Self.order()))
+        #expect(state.payTitle == "Pay now 1.02 AZN")
+        state.strings = CardStrings(language: .ru)
+        #expect(state.payTitle == "Pay now 1.02 AZN", "shown as it is in every language")
+        state.payButtonLabel = "  Buy \n"
+        #expect(state.payTitle == "Buy 1.02 AZN", "surrounding white space is dropped")
+        _ = state.orderDidLoad(.success(Self.order(amount: nil)))
+        #expect(state.payTitle == "Buy", "the label alone while the amount is unknown")
+        _ = state.orderDidLoad(.failure(PayriffError(code: .networkError, message: "offline")))
+        #expect(state.payTitle == "Buy")
+        state.payButtonLabel = "   "
+        #expect(state.payTitle == "Оплатить", "a blank label counts as none")
+        state.payButtonLabel = nil
+        #expect(state.payTitle == "Оплатить", "nil keeps view.pay")
+        #expect(PaymentViewState.nonBlank(" \n") == nil)
+        #expect(PaymentViewState.nonBlank(" Secured ") == "Secured")
+    }
+
     @Test(
         "Amounts: two decimals, '.' as the separator, no grouping, rounded half up",
         arguments: [
@@ -207,6 +230,48 @@ struct PaymentViewStateTests {
         #expect(again.isPayEnabled)
     }
 
+    @Test("On a compromised device: view.deviceNotSupported in the view's language, Pay disabled, the order not read, reported once (CONTRACT §16.16)")
+    func deviceRefused() {
+        var state = Self.state()
+        state.isFormComplete = true
+        #expect(state.deviceWasRefused(.deviceCompromised) == .failed(.deviceCompromised))
+        #expect(state.deviceWasRefused(.deviceCompromised) == nil, "reported once")
+        #expect(state.errorMessage == "Card payments aren't available on this device for security reasons")
+        #expect(!state.needsOrder, "the order is not read")
+        #expect(!state.isPayEnabled)
+        #expect(state.payTitle == "Pay")
+        state.strings = CardStrings(language: .az)
+        #expect(state.errorMessage == "Təhlükəsizlik səbəbilə bu cihazda kartla ödəniş mümkün deyil")
+        state.strings = CardStrings(language: .ru)
+        #expect(state.errorMessage == "По соображениям безопасности оплата картой на этом устройстве недоступна")
+        // An order that already loaded stays unpayable, and the device line wins over other lines.
+        _ = state.orderDidLoad(.success(Self.order()))
+        #expect(!state.isPayEnabled)
+        #expect(state.errorMessage == state.strings.view(.deviceNotSupported))
+        _ = state.orderDidLoad(.success(Self.order(status: .approved)))
+        #expect(state.errorMessage == state.strings.view(.deviceNotSupported))
+
+        // Another order checks the device again and reports its own refusal.
+        state.orderDidChange()
+        #expect(state.deviceRefusal == nil && state.needsOrder && state.errorMessage == nil)
+        #expect(state.deviceWasRefused(.deviceCompromised) == .failed(.deviceCompromised))
+    }
+
+    @Test("DEVICE_COMPROMISED from a payment refuses the device like the view's own check; it was already reported")
+    func deviceRefusedByPayment() {
+        var state = Self.state(.ru)
+        _ = state.orderDidLoad(.success(Self.order()))
+        state.isFormComplete = true
+        state.paymentWillStart()
+        state.paymentDidFinish(.failed(.deviceCompromised))
+        #expect(!state.isPaying && !state.isFinished)
+        #expect(!state.isPayEnabled)
+        #expect(state.errorMessage == "По соображениям безопасности оплата картой на этом устройстве недоступна")
+        #expect(state.reportedDeviceRefusal)
+        #expect(state.deviceWasRefused(.deviceCompromised) == nil, "onResult already had it with the payment's result")
+        #expect(!state.reportedFatalError, "not fatal")
+    }
+
     @Test("view.poweredBy splits at 'Payriff', where the logo goes, in az, en and ru")
     func poweredBySplit() throws {
         let en = try #require(CardStrings(language: .en).poweredByParts)
@@ -246,11 +311,11 @@ struct PaymentViewStateTests {
         return nil
     }
 
-    @Test("The badges and the logo ship in the SDK's bundle at 1x, 2x and 3x, at their sizes in points (CONTRACT §16.14)")
+    @Test("The badges and the light and dark logos ship in the SDK's bundle at 1x, 2x and 3x, at their sizes in points (CONTRACT §16.14)")
     func imagesResolve() throws {
         #expect(PaymentViewAsset.badges == [.mastercard, .visa], "only the accepted cards, no PCI logo")
         let sizes: [PaymentViewAsset: (Int, Int)] = [
-            .mastercard: (43, 28), .visa: (42, 28), .payriffLogo: (82, 16),
+            .mastercard: (43, 28), .visa: (42, 28), .payriffLogo: (82, 16), .payriffLogoDark: (82, 16),
         ]
         #expect(Set(sizes.keys) == Set(PaymentViewAsset.allCases))
         for asset in PaymentViewAsset.allCases {
@@ -264,7 +329,25 @@ struct PaymentViewStateTests {
             }
         }
         #expect(PaymentViewAsset.payriffLogo.accessibilityLabel == "Payriff")
+        #expect(PaymentViewAsset.payriffLogoDark.accessibilityLabel == "Payriff")
+        #expect(PaymentViewAsset.logo(dark: false) == .payriffLogo)
+        #expect(PaymentViewAsset.logo(dark: true) == .payriffLogoDark)
+        #expect(PaymentViewAsset.payriffLogoDark.name == "payriff-logo-dark")
         #expect(PaymentViewAsset(rawValue: "lock") == nil, "the lock is drawn in code")
+    }
+
+    @Test("The dark logo is the light one with a #E1E4E8 wordmark: same size, different pixels")
+    func darkLogoDiffers() throws {
+        for scale in ["", "@2x", "@3x"] {
+            let light = try #require(PayriffResources.bundle.url(forResource: "payriff-logo\(scale)", withExtension: "png"))
+            let dark = try #require(PayriffResources.bundle.url(forResource: "payriff-logo-dark\(scale)", withExtension: "png"))
+            let lightData = try Data(contentsOf: light)
+            let darkData = try Data(contentsOf: dark)
+            #expect(lightData != darkData, "payriff-logo-dark\(scale).png")
+            let lightSize = try #require(Self.pngSize(lightData))
+            let darkSize = try #require(Self.pngSize(darkData))
+            #expect(lightSize == darkSize, "payriff-logo-dark\(scale).png")
+        }
     }
 
     private static func isClose(_ value: CGFloat, _ expected: CGFloat, tolerance: CGFloat = 0.001) -> Bool {

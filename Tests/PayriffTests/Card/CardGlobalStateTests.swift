@@ -92,10 +92,12 @@ extension GlobalStateTests {
         for text in [config.description, config.debugDescription, String(reflecting: config), dumped] {
             #expect(!text.contains("GLOBALTEST123"))
         }
-        #expect(config.description == "PayriffConfig(publishableKey: pr_pk_live_***(\(Self.publishableKey.count)), environment: sandbox, language: AZ, enableLogging: false)")
-        #expect(Mirror(reflecting: config).children.map(\.label) == ["publishableKey", "environment", "language", "enableLogging"])
+        #expect(config.description == "PayriffConfig(publishableKey: pr_pk_live_***(\(Self.publishableKey.count)), environment: sandbox, language: AZ, enableLogging: false, allowCompromisedDevices: false)")
+        #expect(Mirror(reflecting: config).children.map(\.label) == ["publishableKey", "environment", "language", "enableLogging", "allowCompromisedDevices"])
         #expect(PayriffConfig(publishableKey: "abc").description.contains("publishableKey: ***(3)"))
-        #expect(PayriffConfig().description == "PayriffConfig(publishableKey: nil, environment: production, language: nil, enableLogging: false)")
+        #expect(PayriffConfig().description == "PayriffConfig(publishableKey: nil, environment: production, language: nil, enableLogging: false, allowCompromisedDevices: false)")
+        #expect(PayriffConfig(allowCompromisedDevices: true).description.hasSuffix("allowCompromisedDevices: true)"))
+        #expect(!PayriffConfig().allowCompromisedDevices, "card payments are refused on a compromised device by default")
     }
 
     @Test(
@@ -142,7 +144,8 @@ extension GlobalStateTests {
                     return encrypted
                 },
                 // Logged in plain with the details; a fixed one cannot contain the CVV by chance.
-                makeIdempotencyKey: { CardFlowHarness.idempotencyKey }
+                makeIdempotencyKey: { CardFlowHarness.idempotencyKey },
+                checkDevice: { nil }
             ),
             ui: ui
         )

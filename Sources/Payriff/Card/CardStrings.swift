@@ -50,6 +50,8 @@ struct CardStrings: Sendable, Equatable {
         case poweredBy
         /// The error line of an order that loaded but cannot be paid by card.
         case notPayable
+        /// The error line on a compromised device (CONTRACT §16.16).
+        case deviceNotSupported
     }
 
     /// The error text for `error` in `field`. An error without a specific text falls back to the
@@ -151,25 +153,29 @@ struct CardStrings: Sendable, Equatable {
         .ru: "Информация о карте",
     ]
 
-    /// `view.*`: the payment view's Pay button, secure line, footer and not-payable line.
+    /// `view.*`: the payment view's Pay button, secure line, footer, not-payable line and the line
+    /// of a compromised device.
     static let viewTexts: [PayriffLanguage: [ViewText: String]] = [
         .az: [
             .pay: "Ödə",
             .secure: "PCI DSS ilə təhlükəsiz ödəniş",
             .poweredBy: "Payriff tərəfindən hazırlanıb",
             .notPayable: "Bu sifarişi kartla ödəmək mümkün deyil",
+            .deviceNotSupported: "Təhlükəsizlik səbəbilə bu cihazda kartla ödəniş mümkün deyil",
         ],
         .en: [
             .pay: "Pay",
             .secure: "Proceed securely by PCI DSS",
             .poweredBy: "Powered by Payriff",
             .notPayable: "This order cannot be paid by card",
+            .deviceNotSupported: "Card payments aren't available on this device for security reasons",
         ],
         .ru: [
             .pay: "Оплатить",
             .secure: "Безопасная оплата по PCI DSS",
             .poweredBy: "При поддержке Payriff",
             .notPayable: "Этот заказ нельзя оплатить картой",
+            .deviceNotSupported: "По соображениям безопасности оплата картой на этом устройстве недоступна",
         ],
     ]
 }

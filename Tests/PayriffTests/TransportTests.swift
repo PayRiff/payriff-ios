@@ -58,6 +58,74 @@ final class MockURLProtocol: URLProtocol {
     }
 }
 
+/// A `URLProtocol` that raises a server-trust challenge before it answers, like the TLS handshake
+/// of a real connection: the request reaches the "server" only when the challenge is accepted.
+/// The challenge has no certificate, so a pinned host's challenge must be refused. Requests go to
+/// `*.payriff.test` hosts, which do not exist; the challenge names the host they stand for.
+final class ChallengingURLProtocol: URLProtocol {
+    /// Passes URLSession's answer to the challenge back to the protocol.
+    private final class Sender: NSObject, URLAuthenticationChallengeSender, @unchecked Sendable {
+        let owner: ChallengingURLProtocol
+
+        init(_ owner: ChallengingURLProtocol) {
+            self.owner = owner
+        }
+
+        func use(_ credential: URLCredential, for challenge: URLAuthenticationChallenge) { owner.serve() }
+        func continueWithoutCredential(for challenge: URLAuthenticationChallenge) { owner.serve() }
+        func performDefaultHandling(for challenge: URLAuthenticationChallenge) { owner.serve() }
+        func rejectProtectionSpaceAndContinue(with challenge: URLAuthenticationChallenge) { owner.serve() }
+        func cancel(_ challenge: URLAuthenticationChallenge) { owner.refuse() }
+    }
+
+    /// The host each test host stands for in the challenge.
+    static let challengeHosts = ["pinned.payriff.test": "api.payriff.com", "sandbox.payriff.test": "sb-api.payriff.com", "bank.payriff.test": "acs.bank.example"]
+
+    private static let log = OSAllocatedUnfairLock(initialState: (started: [String](), served: [String]()))
+
+    /// The hosts whose requests started (a TLS handshake each).
+    static func started(_ host: String) -> Int { log.withLock { $0.started.filter { $0 == host }.count } }
+    /// The hosts whose requests reached the server.
+    static func served(_ host: String) -> Int { log.withLock { $0.served.filter { $0 == host }.count } }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        challengeHosts[request.url?.host ?? ""] != nil
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let host = request.url?.host ?? ""
+        Self.log.withLock { $0.started.append(host) }
+        let space = URLProtectionSpace(
+            host: Self.challengeHosts[host] ?? host,
+            port: 443,
+            protocol: NSURLProtectionSpaceHTTPS,
+            realm: nil,
+            authenticationMethod: NSURLAuthenticationMethodServerTrust
+        )
+        let challenge = URLAuthenticationChallenge(protectionSpace: space, proposedCredential: nil, previousFailureCount: 0, failureResponse: nil, error: nil, sender: Sender(self))
+        client?.urlProtocol(self, didReceive: challenge)
+    }
+
+    override func stopLoading() {}
+
+    /// The handshake passed: the request reaches the server, which answers.
+    fileprivate func serve() {
+        let host = request.url?.host ?? ""
+        Self.log.withLock { $0.served.append(host) }
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"code":"00000","payload":{"orderId":"o1","status":"PENDING"}}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    /// The handshake was cancelled: the connection ends before the request is sent.
+    fileprivate func refuse() {
+        client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+    }
+}
+
 @Suite("URLSession transport")
 struct TransportTests {
     private func transport() -> URLSessionTransport {
@@ -138,6 +206,73 @@ struct TransportTests {
         #expect(configuration.httpCookieAcceptPolicy == .never)
         #expect(configuration.requestCachePolicy == .reloadIgnoringLocalAndRemoteCacheData)
         #expect(configuration.timeoutIntervalForRequest == 30)
+        // A task without a delegate of its own is pinned too, and never follows a redirect.
+        let delegate = URLSessionTransport.shared.session.delegate as? TransportTaskDelegate
+        #expect(delegate != nil && delegate?.followsRedirects == false)
+    }
+
+    // MARK: Certificate pinning (CONTRACT §16.15)
+
+    private func challengingClient(_ host: String) -> ClientAPIClient {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ChallengingURLProtocol.self]
+        let transport = URLSessionTransport(session: URLSession(configuration: configuration))
+        return client(host, transport: transport)
+    }
+
+    @Test("A pinned host whose certificate fails: NETWORK_ERROR, not retryable, the contract's message, nothing sent, /pay not retried")
+    func pinningRefusal() async throws {
+        let card = EncryptedCard(encryptedMessage: "Q0lQSEVSVEVYVA==", wrappedKey: "V1JBUFBFRC1LRVk=")
+        for host in ["pinned.payriff.test", "sandbox.payriff.test"] {
+            let api = challengingClient(host)
+            let pay = try #require(await api.pay("o1", card: card, idempotencyKey: "k-1").failureValue)
+            #expect(pay.code == .networkError, "\(host)")
+            #expect(!pay.isRetryable)
+            #expect(!pay.isFatal)
+            #expect(pay.message == "Payriff's server certificate could not be verified.")
+            #expect(pay.cause is CertificatePinningError)
+            #expect(ChallengingURLProtocol.started(host) == 1, "\(host): one handshake, no retry")
+            let status = try #require(await api.status("o1").failureValue)
+            #expect(status.message == CertificatePinning.failureMessage)
+            #expect(ChallengingURLProtocol.served(host) == 0, "\(host): nothing reached the server")
+        }
+    }
+
+    @Test("Other hosts are not pinned: their challenges are left to URLSession and the request is sent")
+    func otherHostsNotPinned() async throws {
+        let status = try await challengingClient("bank.payriff.test").status("o1").get()
+        #expect(status.status == .pending)
+        #expect(ChallengingURLProtocol.served("bank.payriff.test") >= 1)
+    }
+
+    @Test("A test transport replaces the pinned one whole")
+    func testTransportUnaffected() async throws {
+        let transport = FakeTransport(status: 200, body: #"{"code":"00000","payload":{"orderId":"o1","status":"PENDING"}}"#)
+        let api = ClientAPIClient(
+            baseURL: "https://api.payriff.com",
+            credentials: ClientCredentials(publishableKey: "pr_pk_live_WIRE", clientSecret: "pr_cs_WIRE"),
+            appId: nil,
+            transport: transport,
+            clock: FakeClock()
+        )
+        #expect(try await api.status("o1").get().status == .pending)
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test("A refused certificate on /pay from any transport is not retried")
+    func pinningRefusalNotRetried() async throws {
+        let transport = FakeTransport { _ in throw CertificatePinningError() }
+        let api = ClientAPIClient(
+            baseURL: "https://api.payriff.com",
+            credentials: ClientCredentials(publishableKey: "pr_pk_live_WIRE", clientSecret: "pr_cs_WIRE"),
+            appId: nil,
+            transport: transport,
+            clock: FakeClock()
+        )
+        let card = EncryptedCard(encryptedMessage: "Q0lQSEVSVEVYVA==", wrappedKey: "V1JBUFBFRC1LRVk=")
+        let error = try #require(await api.pay("o1", card: card, idempotencyKey: "k-1").failureValue)
+        #expect(error.code == .networkError && !error.isRetryable)
+        #expect(transport.requests.count == 1)
     }
 }
 

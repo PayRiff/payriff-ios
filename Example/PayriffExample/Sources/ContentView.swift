@@ -2,9 +2,12 @@ import Payriff
 import SwiftUI
 
 /// The only screen: the order your server created, and three ways to show the SDK's payment
-/// view (`PayriffPaymentScreen`): pushed as a page, in a bottom sheet, or in a popup.
+/// view (`PayriffPaymentScreen`): pushed as a page, in a bottom sheet as tall as the view, or in
+/// a popup.
 struct ContentView: View {
     @EnvironmentObject private var model: ExampleModel
+    /// The payment view's fitting height, which sizes the bottom sheet once the view reports it.
+    @State private var sheetHeight: CGFloat?
 
     var body: some View {
         NavigationStack {
@@ -44,7 +47,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: binding(for: .bottomSheet)) {
             paymentScreen
-                .presentationDetents([.fraction(0.85), .large])
+                .onFittingHeightChange { sheetHeight = $0 }
+                // As tall as the payment view; full height until the view reports its height.
+                .presentationDetents([sheetHeight.map { .height($0) } ?? .large])
                 .presentationDragIndicator(.visible)
         }
         .overlay {
@@ -65,7 +70,7 @@ struct ContentView: View {
     }
 
     /// The SDK's default payment view for the entered order; its result closes the presentation.
-    private var paymentScreen: some View {
+    private var paymentScreen: PayriffPaymentScreen {
         PayriffPaymentScreen(
             orderId: model.trimmedOrderId,
             clientSecret: model.trimmedClientSecret,

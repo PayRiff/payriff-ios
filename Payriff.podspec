@@ -23,7 +23,7 @@ Pod::Spec.new do |s|
   s.source_files     = 'Sources/Payriff/**/*.swift'
   s.resource_bundles = {
     'Payriff_Privacy' => ['Sources/Payriff/Resources/PrivacyInfo.xcprivacy'],
-    # The images of PayriffPaymentView (badges, logo) in 1x, 2x and 3x; the lock is drawn in code.
+    # The images of PayriffPaymentView (badges, light and dark logo) in 1x, 2x and 3x; the lock is drawn in code.
     'Payriff_PaymentView' => ['Sources/Payriff/Resources/PaymentView/*.png'],
   }
   s.frameworks       = 'Foundation', 'UIKit', 'WebKit', 'SwiftUI', 'CryptoKit', 'Security'

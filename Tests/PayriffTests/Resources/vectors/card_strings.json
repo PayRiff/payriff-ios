@@ -42,7 +42,8 @@
         "pay": "Ödə",
         "secure": "PCI DSS ilə təhlükəsiz ödəniş",
         "poweredBy": "Payriff tərəfindən hazırlanıb",
-        "notPayable": "Bu sifarişi kartla ödəmək mümkün deyil"
+        "notPayable": "Bu sifarişi kartla ödəmək mümkün deyil",
+        "deviceNotSupported": "Təhlükəsizlik səbəbilə bu cihazda kartla ödəniş mümkün deyil"
       }
     },
     "en": {
@@ -86,7 +87,8 @@
         "pay": "Pay",
         "secure": "Proceed securely by PCI DSS",
         "poweredBy": "Powered by Payriff",
-        "notPayable": "This order cannot be paid by card"
+        "notPayable": "This order cannot be paid by card",
+        "deviceNotSupported": "Card payments aren't available on this device for security reasons"
       }
     },
     "ru": {
@@ -130,7 +132,8 @@
         "pay": "Оплатить",
         "secure": "Безопасная оплата по PCI DSS",
         "poweredBy": "При поддержке Payriff",
-        "notPayable": "Этот заказ нельзя оплатить картой"
+        "notPayable": "Этот заказ нельзя оплатить картой",
+        "deviceNotSupported": "По соображениям безопасности оплата картой на этом устройстве недоступна"
       }
     }
   }

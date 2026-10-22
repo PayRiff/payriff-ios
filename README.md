@@ -4,6 +4,7 @@ Accept card payments with [Payriff](https://payriff.com) in your iOS app. Your s
 
 - A ready-made payment screen that looks like the card part of Payriff's hosted payment page (pay.payriff.com) by default and can be restyled: the card form with Visa and Mastercard marks, a Pay button with the amount, localized labels and errors.
 - The card never reaches your code or logs; it leaves the device only encrypted (AES-256-GCM, the key wrapped with Payriff's pinned RSA key).
+- Pinned connections to Payriff's API, and card payments refused on jailbroken or hooked devices ([Security](#security)).
 - 3-D Secure in a sheet that reads as part of your app; web views appear only for 3-D Secure.
 - The merchant secret key never ships in the app: it stays on your server.
 - iOS 16+, Swift 6, no third-party dependencies, Swift Package Manager (CocoaPods coming soon).
@@ -25,6 +26,7 @@ Accept card payments with [Payriff](https://payriff.com) in your iOS app. Your s
 - [Fulfil on your server](#fulfil-on-your-server)
 - [Errors](#errors)
 - [Logging](#logging)
+- [Security](#security)
 - [Privacy and screen protection](#privacy-and-screen-protection)
 - [Platform notes](#platform-notes)
 - [Known limitations](#known-limitations)
@@ -37,7 +39,7 @@ Accept card payments with [Payriff](https://payriff.com) in your iOS app. Your s
 
 1. **Your server creates the order** with its secret key (`POST /api/v3/orders` on Payriff's API) and returns the order's `orderId` and `clientSecret` (`pr_cs_…`) to the app. Payriff returns the client secret when your application has an active publishable key.
 2. **The app shows `PayriffPaymentView`** (`PayriffPaymentScreen` in SwiftUI) for the order. The view reads the order and shows the amount on its Pay button. When the customer taps Pay, it calls `Payriff.confirmCardPayment`.
-3. The SDK loads the order, encrypts the card, sends it to Payriff's Client API and runs 3-D Secure in a sheet when the bank asks for it.
+3. The SDK checks the device, loads the order, encrypts the card, sends it to Payriff's Client API over a pinned connection and runs 3-D Secure in a sheet when the bank asks for it.
 4. The SDK polls the order status and returns a `PayriffResult`. The result drives your UI; your server confirms the order with Payriff before it fulfils ([Fulfil on your server](#fulfil-on-your-server)).
 
 The SDK never creates orders and never uses the secret key. It is the same split as on the web with Payriff.js.
@@ -175,8 +177,9 @@ PayriffPaymentView(
 // SwiftUI: PayriffPaymentScreen(orderId:clientSecret:language:style:onResult:) takes the same values.
 ```
 
-- It shows the card form, a Pay button with the order's amount ("Pay 1.02 AZN"), the Mastercard and Visa badges, a "Proceed securely by PCI DSS" line and a "Powered by Payriff" footer.
+- It shows the card form, a Pay button with the order's amount ("Pay 1.02 AZN"), the Mastercard and Visa badges, a "Proceed securely by PCI DSS" line and a "Powered by Payriff" footer. In dark mode the footer's logo has a light wordmark.
 - It reads the order with `Payriff.retrieveOrder` when it appears. The Pay button stays disabled while the order loads, while the form is incomplete and while a payment runs. It also stays disabled when the order cannot be paid by card or did not load: a line under the button then says why ("This order cannot be paid by card" in the view's language, or the error's message), and VoiceOver reads it out. If the order did not load for a reason that is not fatal, such as no network, the view reads it again the next time it appears.
+- On a jailbroken or hooked device ([Security](#security)) the view does not read the order. It says "Card payments aren't available on this device for security reasons" under the button (in the view's language), keeps Pay disabled and passes `DEVICE_COMPROMISED` to `onResult` once.
 - Pay runs `Payriff.confirmCardPayment` with the view's card form. While it runs, a spinner replaces the button's title and the form is locked. 3-D Secure opens in Payriff's sheet.
 - `onResult` is called on the main actor with the result of each payment attempt. It is also called once with a fatal error that ends the order (`error.isFatal`, for example `SESSION_EXPIRED` for an expired client secret), even when the error comes from reading the order. After a result with a status (success, declined, cancelled or pending), the view does not pay the order again.
 - A failure that is not fatal keeps the order payable, for example `NETWORK_ERROR` (`error.isRetryable`) or `PAYMENT_FAILED`. Pay stays enabled, so the customer can try again in the same view, and you can also show the view again with the same `orderId` and `clientSecret`. The view does not show the message of such a failure: show `error.message` yourself. `ORDER_NOT_PAYABLE` and fatal errors disable Pay and show their message under the button.
@@ -186,18 +189,24 @@ PayriffPaymentView(
 
 ### Page, bottom sheet or popup
 
-Give the view the whole screen or most of it. It adds the safe area to its padding, scrolls when the keyboard is up, keeps the field being edited above the keyboard, and keeps the footer at the bottom when there is room. It does not size itself to its content, so give it a height, as below. The [quick start](#quick-start) shows it as a page; a bottom sheet and a popup work the same way.
+The view fills the space you give it. It adds the safe area to its padding, scrolls when the keyboard is up, keeps the field being edited above the keyboard, and keeps the footer at the bottom when there is room. The [quick start](#quick-start) shows it as a page.
 
-**SwiftUI:**
+A bottom sheet can be as tall as the view. The view's fitting height is the height it needs at its width to show everything without scrolling, without the safe area. A sheet's detent is a height within the sheet's safe area, so it takes the fitting height as it is. The height changes with the content, for example when an error line appears under a field or the text size changes, and the view reports each change so that the sheet follows. With the keyboard up, the view still scrolls.
+
+**SwiftUI:** `onFittingHeightChange` reports the fitting height; `.presentationDetents([.height(h)])` sizes the sheet.
 
 ```swift
-// A bottom sheet.
+@State private var sheetHeight: CGFloat?
+
+// A bottom sheet as tall as the view.
 .sheet(isPresented: $showsSheet) {
     PayriffPaymentScreen(orderId: order.orderId, clientSecret: order.clientSecret) { result in
         showsSheet = false
         handle(result)
     }
-    .presentationDetents([.fraction(0.85), .large])
+    .onFittingHeightChange { sheetHeight = $0 }
+    // Full height until the view reports its height.
+    .presentationDetents([sheetHeight.map { .height($0) } ?? .large])
     .presentationDragIndicator(.visible)
 }
 
@@ -220,48 +229,60 @@ Give the view the whole screen or most of it. It adds the safe area to its paddi
 }
 ```
 
-**UIKit:**
+**UIKit:** `fittingHeight(forWidth:)` gives a custom detent its height, and `onFittingHeightChange` says when to resolve the detents again.
 
 ```swift
-// A bottom sheet.
-let payment = UIViewController()
-payment.view = PayriffPaymentView(orderId: order.orderId, clientSecret: order.clientSecret) { [weak self] result in
-    self?.dismiss(animated: true)
-    self?.handle(result)
+// A bottom sheet as tall as the view.
+func payInSheet(_ order: Order) {
+    let paymentView = PayriffPaymentView(orderId: order.orderId, clientSecret: order.clientSecret) { [weak self] result in
+        self?.dismiss(animated: true)
+        self?.handle(result)
+    }
+    let payment = UIViewController()
+    payment.view = paymentView
+    if let sheet = payment.sheetPresentationController {
+        sheet.detents = [.custom { [weak self, weak paymentView] context in
+            // On iPhone the sheet is as wide as the screen.
+            guard let width = self?.view.bounds.width, let paymentView else { return nil }
+            return min(paymentView.fittingHeight(forWidth: width), context.maximumDetentValue)
+        }]
+        sheet.prefersGrabberVisible = true
+        paymentView.onFittingHeightChange = { [weak sheet] _ in
+            sheet?.animateChanges { sheet?.invalidateDetents() }
+        }
+    }
+    present(payment, animated: true)
 }
-if let sheet = payment.sheetPresentationController {
-    sheet.detents = [.custom { $0.maximumDetentValue * 0.85 }, .large()]
-    sheet.prefersGrabberVisible = true
-}
-present(payment, animated: true)
 
 // A popup: the view as a card in the middle of the dimmed screen.
-let popup = UIViewController()
-popup.modalPresentationStyle = .overFullScreen
-popup.modalTransitionStyle = .crossDissolve
-popup.view.backgroundColor = UIColor.black.withAlphaComponent(0.4)
-let paymentView = PayriffPaymentView(orderId: order.orderId, clientSecret: order.clientSecret) { [weak self] result in
-    self?.dismiss(animated: true)
-    self?.handle(result)
+func payInPopup(_ order: Order) {
+    let popup = UIViewController()
+    popup.modalPresentationStyle = .overFullScreen
+    popup.modalTransitionStyle = .crossDissolve
+    popup.view.backgroundColor = UIColor.black.withAlphaComponent(0.4)
+    let paymentView = PayriffPaymentView(orderId: order.orderId, clientSecret: order.clientSecret) { [weak self] result in
+        self?.dismiss(animated: true)
+        self?.handle(result)
+    }
+    paymentView.layer.cornerRadius = 16
+    paymentView.clipsToBounds = true
+    paymentView.translatesAutoresizingMaskIntoConstraints = false
+    popup.view.addSubview(paymentView)
+    let safeArea = popup.view.safeAreaLayoutGuide
+    let width = paymentView.widthAnchor.constraint(equalToConstant: 440)
+    let height = paymentView.heightAnchor.constraint(equalToConstant: 640)
+    width.priority = .defaultHigh
+    height.priority = .defaultHigh
+    NSLayoutConstraint.activate([
+        paymentView.centerXAnchor.constraint(equalTo: safeArea.centerXAnchor),
+        paymentView.centerYAnchor.constraint(equalTo: safeArea.centerYAnchor),
+        paymentView.leadingAnchor.constraint(greaterThanOrEqualTo: safeArea.leadingAnchor, constant: 16),
+        paymentView.topAnchor.constraint(greaterThanOrEqualTo: safeArea.topAnchor, constant: 16),
+        width,
+        height,
+    ])
+    present(popup, animated: true)
 }
-paymentView.layer.cornerRadius = 16
-paymentView.clipsToBounds = true
-paymentView.translatesAutoresizingMaskIntoConstraints = false
-popup.view.addSubview(paymentView)
-let safeArea = popup.view.safeAreaLayoutGuide
-let width = paymentView.widthAnchor.constraint(equalToConstant: 440)
-let height = paymentView.heightAnchor.constraint(equalToConstant: 640)
-width.priority = .defaultHigh
-height.priority = .defaultHigh
-NSLayoutConstraint.activate([
-    paymentView.centerXAnchor.constraint(equalTo: safeArea.centerXAnchor),
-    paymentView.centerYAnchor.constraint(equalTo: safeArea.centerYAnchor),
-    paymentView.leadingAnchor.constraint(greaterThanOrEqualTo: safeArea.leadingAnchor, constant: 16),
-    paymentView.topAnchor.constraint(greaterThanOrEqualTo: safeArea.topAnchor, constant: 16),
-    width,
-    height,
-])
-present(popup, animated: true)
 ```
 
 The view paints its own background (`#FCFCFD`, `#222224` in dark mode), so the sheet and the popup show its colour. If the customer closes the page, the sheet or the popup before tapping Pay, nothing is paid and `onResult` may not be called. A payment that has started still ends with one `onResult` call. The example app (`Example/PayriffExample/Sources/ContentView.swift`) shows all three.
@@ -275,6 +296,7 @@ var style = PayriffPaymentViewStyle()
 style.buttonColor = .systemIndigo
 style.buttonCornerRadius = 12
 style.buttonHeight = 52
+style.payButtonLabel = "Pay now"                // "Pay now 1.02 AZN"
 style.showPoweredBy = false
 style.formStyle.layout = .stacked
 style.formStyle.focusedBorderColor = .systemIndigo
@@ -291,10 +313,12 @@ let paymentView = PayriffPaymentView(orderId: order.orderId, clientSecret: order
 | `buttonColor` | Payriff's brand colour `#4DBDC6` |
 | `buttonTextStyle` | 16 pt semibold; a `nil` colour is white. The spinner shown while paying takes the same colour. |
 | `buttonHeight`, `buttonCornerRadius` | 44, 16 pt. The button grows with large Dynamic Type sizes. |
+| `payButtonLabel` | `nil`: "Pay" in the view's language. A text you set replaces that word in every language; the amount and the currency still follow it ("Pay now 1.02 AZN"), and it shows alone while the amount is unknown. |
 | `secondaryTextColor` | `#76787F`, in light and dark mode: the secure line and the footer |
 | `showBadges` | `true`: the Mastercard and Visa badges under the button |
 | `showSecureNote` | `true`: the lock and "Proceed securely by PCI DSS" |
-| `showPoweredBy` | `true`: "Powered by" and the Payriff logo at the bottom |
+| `secureNoteText` | `nil`: "Proceed securely by PCI DSS" in the view's language. A text you set replaces it in every language. |
+| `showPoweredBy` | `true`: "Powered by" and the Payriff logo at the bottom; in dark mode the logo's wordmark is light (`#E1E4E8`) |
 | `formStyle` | `PayriffCardFormStyle()`. Its `errorColor` and `errorTextStyle` also style the line under the Pay button; `showLabels = false` hides "Card holder" and "Card information". |
 
 The spacing is fixed: 24 pt between the parts, 8 pt above the error line, 20 pt between the badges and the secure line, and at least 24 pt above the footer. The secure line and the footer are 12 pt. Every font of the view scales with Dynamic Type. Colours you set are used as they are, so pass dynamic colours (system colours or `UIColor(dynamicProvider:)`) to follow dark mode. For a layout the style cannot give, [build your own screen](#build-your-own-screen).
@@ -344,6 +368,8 @@ case .declined, .cancelled, .pending: await backend.reconcile(orderId)
 ```
 
 A completion-handler variant, `confirmCardPayment(_:orderId:clientSecret:from:completion:)`, is available too. `Payriff.retrieveOrder(orderId:clientSecret:)` returns the order's amount, currency, description, merchant name, status and `isPayableByCard`, for example to show the amount before the customer pays.
+
+`confirmCardPayment` checks the device before anything is sent, and again right before the card is encrypted: on a jailbroken or hooked device it returns `.failed` with `DEVICE_COMPROMISED` ([Security](#security)).
 
 ### Card form
 
@@ -404,6 +430,7 @@ Fonts scale with Dynamic Type and rows grow with them. Colours you set are used 
 | `environment` | `PayriffEnvironment` | `.production` | `.production` (`https://api.payriff.com`) or `.sandbox` (`https://sb-api.payriff.com`, provisional until Payriff confirms the sandbox host). |
 | `language` | `PayriffLanguage?` | `nil` | `.az`, `.en` or `.ru` for the payment view, the card form and the 3-D Secure sheet. `nil` uses the device language (`az*` → AZ, `ru*` → RU, otherwise EN). |
 | `enableLogging` | `Bool` | `false` | Emit log entries (see [Logging](#logging)). |
+| `allowCompromisedDevices` | `Bool` | `false` | `true` lets card payments run on a jailbroken or hooked device, and the SDK only logs a warning that names what it found. For development on test devices only, never in an app you ship ([Security](#security)). |
 
 The look is set on the view itself: `PayriffPaymentViewStyle` for the payment view, `PayriffCardFormStyle` for the card form. `print(config)`, `debugPrint(config)` and `dump(config)` show the publishable key only as `pr_pk_live_***(<length>)`.
 
@@ -417,11 +444,11 @@ Payment outcomes are returned, never thrown, and every call completes with exact
 | `.declined(payment)` | Status `DECLINED`. | Let the customer try another card. |
 | `.cancelled(payment, reason:)` | `.canceled` / `.expired`: the order was cancelled or expired. | Create a new order if the customer wants to pay again. |
 | `.pending(payment, reason:)` | `.notFinal`: still processing after 120 s, or the customer closed the 3-D Secure sheet before a final status. `.verificationFailed`: status polling stopped on an error. `.unexpectedStatus`: a final status such as `REFUNDED`. | Verify on your server before fulfilling. |
-| `.failed(error)` | The payment could not start or run: configuration, an invalid card form, an order that cannot be paid, or an error from Payriff. | Show `error.message`. `error.isFatal` means "create a new order"; otherwise the customer may try again. |
+| `.failed(error)` | The payment could not start or run: configuration, an invalid card form, an order that cannot be paid, a compromised device, or an error from Payriff. | Show `error.message`. `error.isFatal` means "create a new order"; otherwise the customer may try again. |
 
 `PayriffPayment` carries `orderId`, `status` (`PayriffPaymentStatus`), `rawStatus`, and the `amount` and `currency` from the order's status. `transactionId` and `originalOrderId` are part of the result shape shared by every Payriff SDK and are `nil` in the card flow; so is the `.cancelled` reason `.userClosed` and the `.pending` reason `.unverified`, which the card flow never returns.
 
-Helpers: `result.isSuccess`, `result.payment`, `result.error` and `result.type`; `PayriffPaymentStatus(rawStatus:)` parses a raw status; `Payriff.version` and `Payriff.isPaymentInProgress`.
+Helpers: `result.isSuccess`, `result.payment`, `result.error` and `result.type`; `PayriffPaymentStatus(rawStatus:)` parses a raw status; `Payriff.version`, `Payriff.isPaymentInProgress` and `Payriff.isDeviceCompromised` ([Security](#security)).
 
 ### Result JSON
 
@@ -455,6 +482,7 @@ A pending result is not proof that nothing was paid. Before you let the customer
 | `INVALID_CONFIG` | `publishableKey` is missing or is not `pr_pk_live_…`. |
 | `INVALID_ORDER` | The order id is blank, or the client secret is not `pr_cs_…`. |
 | `PAYMENT_IN_PROGRESS` | Another card payment of the SDK is still running. |
+| `DEVICE_COMPROMISED` | The device is jailbroken, or a hooking tool such as Frida or, in an App Store or TestFlight build, a debugger was found, and `allowCompromisedDevices` is off ([Security](#security)). Nothing was sent. Not retryable and not fatal: the order can still be paid on another device. |
 | `VALIDATION_FAILED` | The card form is not valid; nothing was sent. `fields` lists the fields, and the form shows the errors. |
 | `ORDER_NOT_PAYABLE` | The order is not `CREATED` or `PENDING`, `CARD` is not one of its payment methods, or HTTP 400. |
 | `UNAUTHORIZED` | HTTP 401: the publishable key or this app was rejected. Fatal. |
@@ -463,7 +491,7 @@ A pending result is not proof that nothing was paid. Before you let the customer
 | `INVALID_REQUEST` | HTTP 400 with code `15400`: an integration problem. |
 | `PAYMENT_FAILED` | Payriff refused the payment; `message` carries its reason. The customer may try again. |
 | `UNEXPECTED_RESPONSE` | Payriff answered with a next step the SDK cannot run safely, and the status was not final. |
-| `NETWORK_ERROR` | Offline, DNS, TLS or timeout. Retryable. |
+| `NETWORK_ERROR` | Offline, DNS, TLS or timeout. Retryable, except when Payriff's server certificate fails the SDK's certificate pinning: then `isRetryable` is `false`, the message is "Payriff's server certificate could not be verified." and nothing was sent ([Security](#security)). |
 | `UNKNOWN` | Anything else, for example the card could not be encrypted. Never retryable. |
 
 ## Logging
@@ -482,6 +510,21 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
 - They do contain order ids, statuses, amounts and URL paths. Keep them in your own diagnostics and do not forward `onLog` to third-party analytics or crash reporters.
 - http(s) URLs are logged without query, fragment, user name and password; other schemes only as `<scheme>:…`.
 - Debug builds also log every API request and response at `debug` level as pretty-printed JSON (`HTTP request` / `HTTP response`: method, URL, headers and body), with every secret shown only as `***(<length>)`. Release builds never log them.
+
+## Security
+
+- **Certificate pinning.** Every Client API call of the SDK (the order, pay, the 3-D Secure step and the status) to `api.payriff.com` and `sb-api.payriff.com` is pinned. The connection is accepted only when iOS trusts the certificate chain for the host (chain, expiry, host name) and a key of that chain is one of Payriff's pinned CA keys: the current Sectigo intermediate and roots, and backup roots of other major CAs. They are CA keys, not the server's own key, so Payriff's yearly certificate renewal keeps working. A certificate that fails, for example from a proxy such as Charles or Proxyman, fails the call with `NETWORK_ERROR` (`isRetryable` is `false`, "Payriff's server certificate could not be verified."), and nothing is sent. No setting turns pinning off, in any build. Debug builds log every request and response ([Logging](#logging)), so you do not need a proxy to see the traffic.
+- **Not pinned: the 3-D Secure pages.** They are the banks' own pages, so they load in the SDK's sheet with iOS's usual certificate checks.
+- **Device integrity.** Card payments are refused on a jailbroken device and when a hooking tool is loaded or running (Substrate, libhooker, ElleKit, Frida and the like). In App Store and TestFlight builds an attached debugger and `DYLD_INSERT_LIBRARIES` count too; Xcode uses both when it runs your app, so development is not blocked. The SDK checks when the payment view appears, when `confirmCardPayment` starts and right before the card is encrypted. `confirmCardPayment` then returns `.failed` with `DEVICE_COMPROMISED` and nothing is sent; the payment view says "Card payments aren't available on this device for security reasons", keeps Pay disabled, does not read the order and passes `DEVICE_COMPROMISED` to `onResult` once. `Payriff.retrieveOrder` is never blocked. `Payriff.isDeviceCompromised` lets you decide early, for example to offer another payment method. Nothing is checked on the simulator or on a Mac. The checks run on the device and stop the common tools; a determined attacker can get past them.
+- **Opting out for development.** On a jailbroken test device, set `allowCompromisedDevices` in debug builds only. The SDK then only logs a warning that names what it found, such as `jailbreak files` or `Frida` (turn on `enableLogging` to see it). Never ship it on:
+
+  ```swift
+  var config = PayriffConfig(publishableKey: "pr_pk_live_…")
+  #if DEBUG
+  config.allowCompromisedDevices = true   // a jailbroken test device; never in a release build
+  #endif
+  Payriff.configure(config)
+  ```
 
 ## Privacy and screen protection
 
@@ -524,7 +567,7 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
 
 4. Under **Order from your backend**, type the `orderId` and the `clientSecret`, or tap **Paste**. Paste reads the JSON `{"orderId", "clientSecret"}` from the clipboard, or the two values separated by white space.
 
-5. **Pay in page**, **Pay in bottom sheet** and **Pay in popup** show `PayriffPaymentScreen` pushed as a page, in a sheet (85% of the screen, or full height) or as a card in the middle of the dimmed screen (`ContentView.swift`). The buttons are enabled once the publishable key and both values are there; without a publishable key, the screen says so. 3-D Secure opens in the SDK's sheet.
+5. **Pay in page**, **Pay in bottom sheet** and **Pay in popup** show `PayriffPaymentScreen` pushed as a page, in a sheet as tall as the view (full height until the view reports its height) or as a card in the middle of the dimmed screen (`ContentView.swift`). The buttons are enabled once the publishable key and both values are there; without a publishable key, the screen says so. 3-D Secure opens in the SDK's sheet.
 
 6. The result closes the payment view and opens in a result sheet: the result's type, the order id, the status, the amount, the error and the result's JSON. After a failure the order stays in the fields, so you can pay it again; after any other result the fields are cleared.
 
@@ -540,7 +583,9 @@ Debug builds also write the SDK log to `Documents/payriff-sdk.log` in the app's 
 | `UNAUTHORIZED` | The publishable key is wrong or revoked, or the app is not allowed for it, or it belongs to the other environment. |
 | `SESSION_EXPIRED` | The order does not exist in this environment, or its client secret expired: create a new order. |
 | `ORDER_NOT_PAYABLE` | The order was already paid, cancelled or expired, or does not accept cards. |
-| The payment view's Pay button stays disabled | The order is still loading, cannot be paid by card or did not load (the line under the button says why), or the form is not complete. |
+| `NETWORK_ERROR`: "Payriff's server certificate could not be verified." | A proxy (Charles, Proxyman, mitmproxy) or a network that intercepts TLS sits between the app and Payriff, or the device's date is wrong. The SDK's connections are pinned: turn the proxy off. Debug builds log the traffic ([Logging](#logging)). |
+| `DEVICE_COMPROMISED` on a test device | The device is jailbroken, a hooking tool such as Frida runs, or a debugger is attached to an App Store or TestFlight build. Turn on `enableLogging` to see which signal matched. For development, set `allowCompromisedDevices` in debug builds only ([Security](#security)). |
+| The payment view's Pay button stays disabled | The order is still loading, cannot be paid by card or did not load (the line under the button says why), the form is not complete, or card payments are refused on this device ([Security](#security)). |
 | Need more detail | Set `enableLogging: true` and read `PayriffLogger.onLog` or the Xcode console. |
 
 ## Support

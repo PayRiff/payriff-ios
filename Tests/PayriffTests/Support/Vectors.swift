@@ -140,6 +140,8 @@ enum Vectors {
             "description", "brands", "maxPanDigits", "maxHolderLength", "number", "detectBrand",
             "expiry", "cvv", "holder", "visibleError", "luhn",
         ],
+        // Certificate pinning (CONTRACT §16.15), asserted by CertificatePinningTests.
+        "tls_pins": ["description", "hosts", "pins", "trustAnchors", "currentChain", "interceptedChain"],
     ]
 
     /// Vector files that no code in this package implements yet. Their sections are pinned here

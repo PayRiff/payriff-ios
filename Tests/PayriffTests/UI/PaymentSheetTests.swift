@@ -332,7 +332,8 @@ final class SheetHarness {
                 client: client,
                 clock: SystemPaymentClock(),
                 encrypt: { _ in CardFlowHarness.encrypted },
-                makeIdempotencyKey: { CardFlowHarness.idempotencyKey }
+                makeIdempotencyKey: { CardFlowHarness.idempotencyKey },
+                checkDevice: { nil }
             ),
             ui: ui
         )

@@ -21,6 +21,12 @@ struct ModelTests {
             #"{"error":{"code":"PAYMENT_FAILED","httpStatus":200,"isRetryable":true,"message":"Card declined by issuer","payriffCode":"16001","supportTicket":"1"},"type":"failed"}"#)
         #expect(try Self.json(PayriffResult.failed(.network("offline"))) ==
             #"{"error":{"code":"NETWORK_ERROR","httpStatus":null,"isRetryable":true,"message":"offline","payriffCode":null,"supportTicket":null},"type":"failed"}"#)
+        // CONTRACT §16.16: a compromised device, not retryable.
+        #expect(try Self.json(PayriffResult.failed(.deviceCompromised)) ==
+            #"{"error":{"code":"DEVICE_COMPROMISED","httpStatus":null,"isRetryable":false,"message":"Card payments are not available on this device.","payriffCode":null,"supportTicket":null},"type":"failed"}"#)
+        // CONTRACT §16.15: a refused server certificate, not retryable.
+        #expect(try Self.json(PayriffResult.failed(ClientAPIClient.transportError(CertificatePinningError()))) ==
+            #"{"error":{"code":"NETWORK_ERROR","httpStatus":null,"isRetryable":false,"message":"Payriff's server certificate could not be verified.","payriffCode":null,"supportTicket":null},"type":"failed"}"#)
         // Payments still decode, also from the null-filled shape.
         let decoded = try JSONDecoder().decode(PayriffPayment.self, from: JSONEncoder().encode(PayriffPayment(orderId: "o2", status: .created)))
         #expect(decoded == PayriffPayment(orderId: "o2", status: .created))
@@ -111,7 +117,7 @@ struct ModelTests {
             "NOT_CONFIGURED", "INVALID_CONFIG", "INVALID_ORDER", "PAYMENT_IN_PROGRESS",
             "UNAUTHORIZED", "RATE_LIMITED", "NETWORK_ERROR", "UNKNOWN",
             "VALIDATION_FAILED", "SESSION_EXPIRED", "ORDER_NOT_PAYABLE", "INVALID_REQUEST", "PAYMENT_FAILED",
-            "UNEXPECTED_RESPONSE",
+            "UNEXPECTED_RESPONSE", "DEVICE_COMPROMISED",
         ])
         // isFatal and fields take part in equality and the description; the result JSON keeps its shape.
         let fatal = PayriffError(code: .sessionExpired, message: "gone", httpStatus: 404, isFatal: true)
@@ -134,6 +140,11 @@ struct ModelTests {
         struct Other: Error {}
         #expect(ClientAPIClient.transportError(Other()).code == .networkError)
         #expect(ClientAPIClient.transportError(Other()).isRetryable)
+        // A refused server certificate (CONTRACT §16.15) is the only NETWORK_ERROR that is not retryable.
+        let pinning = ClientAPIClient.transportError(CertificatePinningError())
+        #expect(pinning.code == .networkError && !pinning.isRetryable)
+        #expect(pinning.message == "Payriff's server certificate could not be verified.")
+        #expect(pinning.cause is CertificatePinningError)
     }
 
     @Test("Messages are split at the first newline into message and support ticket")
