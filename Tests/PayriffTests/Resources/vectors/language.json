@@ -1,0 +1,18 @@
+{
+  "description": "Device locale -> PayriffLanguage. See CONTRACT.md §3.1. Take the primary language subtag (the text before the first '-' or '_'), compare it case-insensitively, and fall back to EN.",
+  "cases": [
+    { "locale": "az", "expected": "AZ" },
+    { "locale": "az-AZ", "expected": "AZ" },
+    { "locale": "az_AZ", "expected": "AZ" },
+    { "locale": "az-Latn-AZ", "expected": "AZ" },
+    { "locale": "AZ", "expected": "AZ" },
+    { "locale": "ru", "expected": "RU" },
+    { "locale": "ru-RU", "expected": "RU" },
+    { "locale": "ru_KZ", "expected": "RU" },
+    { "locale": "en-US", "expected": "EN" },
+    { "locale": "en_GB", "expected": "EN" },
+    { "locale": "tr-TR", "expected": "EN" },
+    { "locale": "azb", "expected": "EN" },
+    { "locale": "", "expected": "EN" }
+  ]
+}

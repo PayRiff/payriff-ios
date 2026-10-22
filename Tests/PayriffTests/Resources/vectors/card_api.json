@@ -1,0 +1,352 @@
+{
+  "order": [
+    {
+      "name": "order loaded",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"amount\": 10.5, \"currency\": \"AZN\", \"description\": \"Order #42\", \"merchantName\": \"Test Merchant\", \"status\": \"CREATED\", \"language\": \"AZ\", \"paymentMethods\": [\"CARD\", \"GOOGLE_PAY\"], \"googlePay\": {\"gateway\": \"payriff\", \"gatewayMerchantId\": \"BCR2DN4T\"}, \"applePay\": null}}",
+      "expect": {
+        "ok": true,
+        "orderId": "o1",
+        "amount": "10.5",
+        "currency": "AZN",
+        "status": "CREATED",
+        "paymentMethods": [
+          "CARD",
+          "GOOGLE_PAY"
+        ],
+        "payable": true
+      }
+    },
+    {
+      "name": "order already paid is not payable",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"amount\": 10.5, \"currency\": \"AZN\", \"description\": \"Order #42\", \"merchantName\": \"Test Merchant\", \"status\": \"APPROVED\", \"language\": \"AZ\", \"paymentMethods\": [\"CARD\", \"GOOGLE_PAY\"], \"googlePay\": {\"gateway\": \"payriff\", \"gatewayMerchantId\": \"BCR2DN4T\"}, \"applePay\": null}}",
+      "expect": {
+        "ok": true,
+        "orderId": "o1",
+        "status": "APPROVED",
+        "payable": false
+      }
+    },
+    {
+      "name": "order without CARD is not payable by card",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"amount\": 10.5, \"currency\": \"AZN\", \"description\": \"Order #42\", \"merchantName\": \"Test Merchant\", \"status\": \"CREATED\", \"language\": \"AZ\", \"paymentMethods\": [\"GOOGLE_PAY\"], \"googlePay\": {\"gateway\": \"payriff\", \"gatewayMerchantId\": \"BCR2DN4T\"}, \"applePay\": null}}",
+      "expect": {
+        "ok": true,
+        "orderId": "o1",
+        "status": "CREATED",
+        "payable": false
+      }
+    }
+  ],
+  "errors": [
+    {
+      "name": "401 app not allowed",
+      "httpStatus": 401,
+      "body": "{\"code\": \"14010\", \"message\": \"App is not allowed for this public key\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "UNAUTHORIZED",
+        "fatal": true,
+        "retry": false,
+        "payriffCode": "14010",
+        "message": "App is not allowed for this public key"
+      }
+    },
+    {
+      "name": "401 key revoked",
+      "httpStatus": 401,
+      "body": "{\"code\": \"14010\", \"message\": \"Invalid public key\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "UNAUTHORIZED",
+        "fatal": true,
+        "retry": false,
+        "payriffCode": "14010"
+      }
+    },
+    {
+      "name": "404 order not found or clientSecret expired",
+      "httpStatus": 404,
+      "body": "{\"code\": \"01000\", \"message\": \"Order not found\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "SESSION_EXPIRED",
+        "fatal": true,
+        "retry": false,
+        "payriffCode": "01000"
+      }
+    },
+    {
+      "name": "400 order not payable",
+      "httpStatus": 400,
+      "body": "{\"code\": \"01000\", \"message\": \"Order is not payable\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "ORDER_NOT_PAYABLE",
+        "fatal": false,
+        "retry": false,
+        "payriffCode": "01000"
+      }
+    },
+    {
+      "name": "400 invalid request",
+      "httpStatus": 400,
+      "body": "{\"code\": \"15400\", \"message\": \"encryptedMessage is required for CARD\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "INVALID_REQUEST",
+        "fatal": false,
+        "retry": false,
+        "payriffCode": "15400"
+      }
+    },
+    {
+      "name": "429 is retried with backoff, then fatal",
+      "httpStatus": 429,
+      "body": "{\"code\": \"01000\", \"message\": \"Too many requests\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "RATE_LIMITED",
+        "fatal": true,
+        "retry": true
+      }
+    },
+    {
+      "name": "429 with empty body",
+      "httpStatus": 429,
+      "body": "",
+      "expect": {
+        "code": "RATE_LIMITED",
+        "fatal": true,
+        "retry": true
+      }
+    },
+    {
+      "name": "500 envelope is a payment failure",
+      "httpStatus": 500,
+      "body": "{\"code\": \"15000\", \"message\": \"Internal error\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "PAYMENT_FAILED",
+        "fatal": false,
+        "retry": false,
+        "payriffCode": "15000"
+      }
+    },
+    {
+      "name": "200 with a non-00000 code is a payment failure",
+      "httpStatus": 200,
+      "body": "{\"code\": \"16001\", \"message\": \"Card declined by issuer\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\"}",
+      "expect": {
+        "code": "PAYMENT_FAILED",
+        "fatal": false,
+        "retry": false,
+        "payriffCode": "16001",
+        "message": "Card declined by issuer"
+      }
+    },
+    {
+      "name": "non-JSON 502",
+      "httpStatus": 502,
+      "body": "<html>Bad gateway</html>",
+      "expect": {
+        "code": "PAYMENT_FAILED",
+        "fatal": false,
+        "retry": false,
+        "payriffCode": null
+      }
+    }
+  ],
+  "status": [
+    {
+      "name": "approved",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"APPROVED\", \"amount\": 10.5, \"currency\": \"AZN\"}}",
+      "expect": {
+        "status": "APPROVED",
+        "final": true,
+        "result": "success"
+      }
+    },
+    {
+      "name": "pre-auth approved",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"PREAUTH_APPROVED\", \"amount\": 10.5, \"currency\": \"AZN\"}}",
+      "expect": {
+        "status": "PREAUTH_APPROVED",
+        "final": true,
+        "result": "success"
+      }
+    },
+    {
+      "name": "declined",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"DECLINED\", \"amount\": 10.5, \"currency\": \"AZN\"}}",
+      "expect": {
+        "status": "DECLINED",
+        "final": true,
+        "result": "declined"
+      }
+    },
+    {
+      "name": "canceled",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"CANCELED\"}}",
+      "expect": {
+        "status": "CANCELED",
+        "final": true,
+        "result": "cancelled"
+      }
+    },
+    {
+      "name": "expired",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"EXPIRED\"}}",
+      "expect": {
+        "status": "EXPIRED",
+        "final": true,
+        "result": "cancelled"
+      }
+    },
+    {
+      "name": "refunded is final but unexpected",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"REFUNDED\"}}",
+      "expect": {
+        "status": "REFUNDED",
+        "final": true,
+        "result": "pending"
+      }
+    },
+    {
+      "name": "created is not final",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"CREATED\"}}",
+      "expect": {
+        "status": "CREATED",
+        "final": false,
+        "result": null
+      }
+    },
+    {
+      "name": "pending is not final",
+      "httpStatus": 200,
+      "body": "{\"code\": \"00000\", \"message\": \"OK\", \"route\": \"/api/v3/client/orders\", \"responseId\": \"r-1\", \"payload\": {\"orderId\": \"o1\", \"status\": \"PENDING\"}}",
+      "expect": {
+        "status": "PENDING",
+        "final": false,
+        "result": null
+      }
+    }
+  ],
+  "requests": [
+    {
+      "name": "GET order",
+      "method": "GET",
+      "path": "/api/v3/client/orders/o1",
+      "headers": {
+        "X-Public-Key": "pr_pk_live_TEST",
+        "X-Client-Secret": "pr_cs_TEST",
+        "X-Client-App-Id": "com.payriff.example.ios",
+        "Accept": "application/json"
+      },
+      "absentHeaders": [
+        "Origin",
+        "X-Parent-Origin",
+        "Authorization"
+      ]
+    },
+    {
+      "name": "POST pay",
+      "method": "POST",
+      "path": "/api/v3/client/orders/o1/pay",
+      "headers": {
+        "X-Public-Key": "pr_pk_live_TEST",
+        "X-Client-Secret": "pr_cs_TEST",
+        "X-Client-App-Id": "com.payriff.example.ios",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "requiredHeaders": [
+        "x-secret-key",
+        "X-Idempotency-Key"
+      ],
+      "absentHeaders": [
+        "Origin",
+        "X-Parent-Origin",
+        "Authorization"
+      ],
+      "body": {
+        "method": "CARD",
+        "encryptedMessage": "<base64>"
+      }
+    },
+    {
+      "name": "GET three-ds",
+      "method": "GET",
+      "path": "/api/v3/client/orders/o1/three-ds",
+      "headers": {
+        "X-Public-Key": "pr_pk_live_TEST",
+        "X-Client-Secret": "pr_cs_TEST",
+        "X-Client-App-Id": "com.payriff.example.ios"
+      }
+    },
+    {
+      "name": "GET status",
+      "method": "GET",
+      "path": "/api/v3/client/orders/o1/status",
+      "headers": {
+        "X-Public-Key": "pr_pk_live_TEST",
+        "X-Client-Secret": "pr_cs_TEST",
+        "X-Client-App-Id": "com.payriff.example.ios"
+      }
+    },
+    {
+      "name": "order id is percent-encoded as one path segment",
+      "method": "GET",
+      "path": "/api/v3/client/orders/a%2Fb",
+      "orderId": "a/b"
+    }
+  ],
+  "keys": [
+    {
+      "name": "live publishable key",
+      "value": "pr_pk_live_abc",
+      "valid": true
+    },
+    {
+      "name": "secret key shape is refused",
+      "value": "0123456789ABCDEF0123456789ABCDEF",
+      "valid": false
+    },
+    {
+      "name": "other prefix is refused",
+      "value": "pk_live_abc",
+      "valid": false
+    },
+    {
+      "name": "empty",
+      "value": "",
+      "valid": false
+    }
+  ],
+  "clientSecrets": [
+    {
+      "name": "client secret",
+      "value": "pr_cs_abc",
+      "valid": true
+    },
+    {
+      "name": "sent as is (trimmed of surrounding whitespace only)",
+      "value": "  pr_cs_abc  ",
+      "valid": true,
+      "sent": "pr_cs_abc"
+    },
+    {
+      "name": "wrong prefix",
+      "value": "cs_abc",
+      "valid": false
+    },
+    {
+      "name": "empty",
+      "value": "",
+      "valid": false
+    }
+  ],
+  "description": "Client API wire rules for the native card flow (backend mobile spec §3-§9, CONTRACT.md §16.3/§16.9). Errors map exactly like the web SDK: 401 -> UNAUTHORIZED (fatal), 404 -> SESSION_EXPIRED (fatal), 429 -> RATE_LIMITED (retried 3 times with 1 s, 2 s, 4 s backoff and the same idempotency key, then fatal), 400 with code 15400 -> INVALID_REQUEST, other 400 -> ORDER_NOT_PAYABLE, anything else that is not HTTP 2xx with code 00000 -> PAYMENT_FAILED. Network failures -> NETWORK_ERROR (a /pay is retried once with the same idempotency key). Status final set: APPROVED, PREAUTH_APPROVED, DECLINED, CANCELED, EXPIRED, PREAUTH_EXPIRED, REFUNDED, PARTIAL_REFUND, REVERSE; result groups as CONTRACT §8.2. Amounts compare numerically."
+}

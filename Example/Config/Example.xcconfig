@@ -1,0 +1,10 @@
+// Build settings of the example app shared by every configuration (committed; contains no
+// credentials). Release builds use this file alone.
+//
+// Debug builds use Example.Debug.xcconfig, which adds the git-ignored Secrets.xcconfig.
+// Copy Secrets.example.xcconfig to Secrets.xcconfig and fill in your publishable key. The values
+// reach the app through Info.plist. The app never holds a secret key: orders come from your
+// server.
+
+PAYRIFF_PUBLISHABLE_KEY =
+PAYRIFF_ENVIRONMENT = sandbox

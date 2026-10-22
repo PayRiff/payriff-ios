@@ -1,0 +1,259 @@
+{
+  "description": "Classify a /pay or /three-ds payload into the SDK's next step. See CONTRACT.md §16.7. Every URL must be absolute https; otherwise the type is invalid (the payment ends as failed(UNEXPECTED_RESPONSE) after a single status check). clientRequest keeps only entries whose key is a string and whose value is a string or null; null becomes an empty string in the challenge form.",
+  "cases": [
+    {
+      "name": "challenge with accessUrl and creq",
+      "payload": {
+        "orderId": "o1",
+        "nextAction": "THREE_DS",
+        "channel": "KAPITAL",
+        "accessUrl": "https://acs.bank.example/challenge",
+        "clientRequest": [
+          {
+            "key": "creq",
+            "value": "abc"
+          }
+        ]
+      },
+      "expected": {
+        "type": "challenge",
+        "url": "https://acs.bank.example/challenge",
+        "form": [
+          [
+            "creq",
+            "abc"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "challenge posts every clientRequest pair, null as empty",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "accessUrl": "https://acs.bank.example/c",
+        "clientRequest": [
+          {
+            "key": "creq",
+            "value": "abc"
+          },
+          {
+            "key": "threeDSSessionData",
+            "value": null
+          }
+        ]
+      },
+      "expected": {
+        "type": "challenge",
+        "url": "https://acs.bank.example/c",
+        "form": [
+          [
+            "creq",
+            "abc"
+          ],
+          [
+            "threeDSSessionData",
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "name": "3DS method, both steps",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "channel": "ATB",
+        "clientRequest": [
+          {
+            "key": "threeDSMethodUrl",
+            "value": "https://acs.bank.example/method"
+          },
+          {
+            "key": "threeDSMethodData",
+            "value": "eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjEifQ"
+          },
+          {
+            "key": "threeDSMethodUrlServer",
+            "value": "https://api.payriff.com/api/v3/gateway/atb/method"
+          }
+        ]
+      },
+      "expected": {
+        "type": "method",
+        "methodUrl": "https://acs.bank.example/method",
+        "methodData": "eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjEifQ",
+        "methodUrlServer": "https://api.payriff.com/api/v3/gateway/atb/method"
+      }
+    },
+    {
+      "name": "3DS method without threeDSMethodUrl skips step 1",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "clientRequest": [
+          {
+            "key": "threeDSMethodUrl",
+            "value": ""
+          },
+          {
+            "key": "threeDSMethodData",
+            "value": "x"
+          },
+          {
+            "key": "threeDSMethodUrlServer",
+            "value": "https://api.payriff.com/api/v3/gateway/atb/method"
+          }
+        ]
+      },
+      "expected": {
+        "type": "method",
+        "methodUrl": null,
+        "methodData": "x",
+        "methodUrlServer": "https://api.payriff.com/api/v3/gateway/atb/method"
+      }
+    },
+    {
+      "name": "THREE_DS with neither accessUrl nor method fields polls /three-ds",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "clientRequest": []
+      },
+      "expected": {
+        "type": "method",
+        "methodUrl": null,
+        "methodData": null,
+        "methodUrlServer": null
+      }
+    },
+    {
+      "name": "WAIT",
+      "payload": {
+        "nextAction": "WAIT"
+      },
+      "expected": {
+        "type": "wait"
+      }
+    },
+    {
+      "name": "REDIRECT",
+      "payload": {
+        "nextAction": "REDIRECT",
+        "redirectUrl": "https://bank.example/frictionless?x=1"
+      },
+      "expected": {
+        "type": "redirect",
+        "url": "https://bank.example/frictionless?x=1"
+      }
+    },
+    {
+      "name": "CHECK_STATUS",
+      "payload": {
+        "nextAction": "CHECK_STATUS"
+      },
+      "expected": {
+        "type": "checkStatus"
+      }
+    },
+    {
+      "name": "http accessUrl is refused",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "accessUrl": "http://acs.bank.example/c",
+        "clientRequest": [
+          {
+            "key": "creq",
+            "value": "a"
+          }
+        ]
+      },
+      "expected": {
+        "type": "invalid"
+      }
+    },
+    {
+      "name": "javascript redirect is refused",
+      "payload": {
+        "nextAction": "REDIRECT",
+        "redirectUrl": "javascript:alert(1)"
+      },
+      "expected": {
+        "type": "invalid"
+      }
+    },
+    {
+      "name": "REDIRECT without url is refused",
+      "payload": {
+        "nextAction": "REDIRECT"
+      },
+      "expected": {
+        "type": "invalid"
+      }
+    },
+    {
+      "name": "http method url is refused",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "clientRequest": [
+          {
+            "key": "threeDSMethodUrl",
+            "value": "http://acs.bank.example/m"
+          },
+          {
+            "key": "threeDSMethodData",
+            "value": "x"
+          }
+        ]
+      },
+      "expected": {
+        "type": "invalid"
+      }
+    },
+    {
+      "name": "non-string clientRequest entries are dropped",
+      "payload": {
+        "nextAction": "THREE_DS",
+        "accessUrl": "https://acs.bank.example/c",
+        "clientRequest": [
+          {
+            "key": "creq",
+            "value": "a"
+          },
+          {
+            "key": 5,
+            "value": "b"
+          },
+          null,
+          {
+            "value": "c"
+          }
+        ]
+      },
+      "expected": {
+        "type": "challenge",
+        "url": "https://acs.bank.example/c",
+        "form": [
+          [
+            "creq",
+            "a"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "unknown nextAction",
+      "payload": {
+        "nextAction": "FOO"
+      },
+      "expected": {
+        "type": "invalid"
+      }
+    },
+    {
+      "name": "missing nextAction",
+      "payload": {
+        "orderId": "o1"
+      },
+      "expected": {
+        "type": "invalid"
+      }
+    }
+  ]
+}

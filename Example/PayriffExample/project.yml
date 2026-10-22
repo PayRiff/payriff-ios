@@ -1,0 +1,82 @@
+# Generate the Xcode project with:  cd Example/PayriffExample && xcodegen generate
+# The generated PayriffExample.xcodeproj is committed; regenerate it after editing this file.
+name: PayriffExample
+options:
+  bundleIdPrefix: com.payriff.example
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+packages:
+  Payriff:
+    path: ../..
+
+# Configuration: only Debug builds include the git-ignored ../Config/Secrets.xcconfig (the
+# publishable key, through Example.Debug.xcconfig); Release builds use Example.xcconfig. The
+# example holds no secret key: orders come from your server.
+configFiles:
+  Debug: ../Config/Example.Debug.xcconfig
+  Release: ../Config/Example.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  PayriffExample:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # Only the committed config files are referenced; Secrets.xcconfig never enters the project.
+      - path: ../Config/Example.xcconfig
+        buildPhase: none
+      - path: ../Config/Example.Debug.xcconfig
+        buildPhase: none
+      - path: ../Config/Secrets.example.xcconfig
+        buildPhase: none
+    dependencies:
+      - package: Payriff
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.payriff.example.ios
+        PRODUCT_NAME: PayriffExample
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+  # Hosted tests that present the real 3-D Secure sheet in the app's window with a fake
+  # network; they never call Payriff.
+  PayriffExampleTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: PayriffExample
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.payriff.example.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+        # Swift Testing and XCTest ship for iOS 17+; the app itself supports iOS 16.
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+
+schemes:
+  PayriffExample:
+    build:
+      targets:
+        PayriffExample: all
+        PayriffExampleTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PayriffExampleTests
+    archive:
+      config: Release

@@ -1,0 +1,249 @@
+{
+  "description": "3-D Secure WebView navigation for the native card flow (backend mobile spec §7, CONTRACT.md §16.8). Each case replays main-frame / subframe navigations in order; state carries over between steps of one case. Actions: allow (load it), allowCallback (it is Payriff's bank callback: load it, never cancel it, and arm the flow), finish (cancel this navigation, close the WebView, resolve the status), external (hand to the OS, keep the WebView), block (cancel silently). A gateway callback is an https main-frame URL whose host equals the API host of the configured environment (case-insensitive) and whose path starts with /api/v3/gateway/ and contains a /callback segment. After a callback has been loaded, the next main-frame navigation that is neither another callback nor about:blank is 'finish'. Main-frame URLs other than https (except about:blank and external app schemes) are 'block'.",
+  "cases": [
+    {
+      "name": "Kapital challenge: callback loads, the next page ends the flow",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://acs.bank.example/challenge",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/kapital/callback/ORD-1",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://merchant.example/return?status=success",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "ATB callback then Payriff result page",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/atb/callback",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://notify.payriff.com/success.html",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "callback with query string",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/azericard/callback?x=1",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://merchant.example/",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "subframe navigations neither arm nor end the flow",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/kapital/callback/1",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://tracker.example/pixel",
+          "isMainFrame": false,
+          "expected": "allow"
+        },
+        {
+          "url": "https://merchant.example/done",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "a second callback right after the first is still a callback",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/kapital/callback/1",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/kapital/callback/2",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://merchant.example/done",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "about:blank after the callback is ignored",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/birbank/callback",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "about:blank",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://merchant.example/done",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "custom scheme after the callback ends the flow",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/abbpay/callback",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "myapp://payriff/return",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "look-alike host is not a callback",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com.evil.example/api/v3/gateway/kapital/callback/1",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://merchant.example/",
+          "isMainFrame": true,
+          "expected": "allow"
+        }
+      ]
+    },
+    {
+      "name": "http callback is not a callback and http pages are blocked",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "http://api.payriff.com/api/v3/gateway/kapital/callback/1",
+          "isMainFrame": true,
+          "expected": "block"
+        }
+      ]
+    },
+    {
+      "name": "gateway path without a callback segment is not a callback",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/atb/method",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://merchant.example/",
+          "isMainFrame": true,
+          "expected": "allow"
+        }
+      ]
+    },
+    {
+      "name": "before any callback, ordinary ACS navigation is allowed",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://acs.bank.example/a",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://acs2.bank.example/b",
+          "isMainFrame": true,
+          "expected": "allow"
+        }
+      ]
+    },
+    {
+      "name": "bank app hand-off before the callback goes to the OS",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "birbank://confirm?id=1",
+          "isMainFrame": true,
+          "expected": "external"
+        },
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/birbank/callback",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://merchant.example/",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "javascript and data URLs in the main frame are blocked",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "javascript:alert(1)",
+          "isMainFrame": true,
+          "expected": "block"
+        },
+        {
+          "url": "data:text/html,hi",
+          "isMainFrame": true,
+          "expected": "block"
+        }
+      ]
+    },
+    {
+      "name": "callback host is case-insensitive",
+      "apiBase": "https://api.payriff.com",
+      "steps": [
+        {
+          "url": "https://API.PAYRIFF.COM/api/v3/gateway/kapital/callback/1",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://merchant.example/",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    }
+  ]
+}

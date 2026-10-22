@@ -1,0 +1,18 @@
+Payriff SDK License
+
+Copyright (c) 2026 Payriff. All rights reserved.
+
+This package (the "Software") is provided by Payriff to let merchants accept payments through
+Payriff's services.
+
+1. You may install and use the Software, and include it unmodified in the build of your own
+   application, solely to integrate with and accept payments through Payriff.
+2. You may not modify, sell, sublicense or distribute the Software on its own, publish it under
+   another name, or use it with any payment service other than Payriff.
+3. The Software connects to Payriff's API at https://api.payriff.com. Your use of Payriff's services
+   is governed by your agreement with Payriff.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL PAYRIFF BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR ITS USE.

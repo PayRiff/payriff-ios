@@ -1,0 +1,7 @@
+// Debug build settings of the example app (committed; contains no credentials).
+//
+// Only Debug builds read the git-ignored Secrets.xcconfig, so credentials from the local file
+// are never compiled into a Release build (CONTRACT §14).
+
+#include "Example.xcconfig"
+#include? "Secrets.xcconfig"

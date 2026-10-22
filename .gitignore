@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+/Packages/
+Package.resolved
+
+# Xcode
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.xcresult
+
+# CocoaPods (the example app uses SPM; lint artifacts only)
+Pods/
+
+# Logs, such as the SDK log of the example app
+*.log
+
+# Example app credentials: never commit a real key. Only the template is tracked.
+Example/Config/Secrets*.xcconfig
+!Example/Config/Secrets.example.xcconfig
+
+# Secrets, signing material and service configuration: never commit them.
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+*.jks
+*.keystore
+GoogleService-Info.plist
+google-services.json
+
+# Archives
+*.ipa
+*.dSYM.zip
+*.dSYM

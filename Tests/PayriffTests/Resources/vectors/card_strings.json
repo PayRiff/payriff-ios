@@ -1,0 +1,134 @@
+{
+  "description": "Card form copy in az/en/ru. Labels, the \"Card information\" group label and the placeholders follow Payriff's hosted payment page (pay.payriff.com, owner request 2026-10-21); the placeholders are the same in every language, as on that page. Field error messages come from the web SDK (fields/i18n.js). Use these exact strings. An errorCode with no specific message falls back to that field's \"invalid\" message. See CONTRACT.md §16.4-§16.5. view.* is the payment view copy (§16.14): pay is followed by the amount; poweredBy is split at \"Payriff\", which is replaced by the logo.",
+  "messages": {
+    "az": {
+      "number": {
+        "required": "Kart nömrəsini daxil edin",
+        "incomplete": "Kart nömrəsi tam deyil",
+        "invalid": "Kart nömrəsi yanlışdır",
+        "unsupported": "Bu kart növü dəstəklənmir"
+      },
+      "expiry": {
+        "required": "Bitmə tarixini daxil edin",
+        "incomplete": "Bitmə tarixi tam deyil",
+        "invalid": "Bitmə tarixi yanlışdır",
+        "expired": "Kartın müddəti bitib"
+      },
+      "cvv": {
+        "required": "CVV daxil edin",
+        "incomplete": "CVV tam deyil",
+        "invalid": "CVV yanlışdır"
+      },
+      "holder": {
+        "required": "Kart sahibinin adını daxil edin",
+        "invalid": "Kart sahibinin adı yanlışdır"
+      },
+      "placeholder": {
+        "number": "1234 1234 1234 1234",
+        "expiry": "MM / YY",
+        "cvv": "CVC",
+        "holder": "Kart sahibinin adı"
+      },
+      "label": {
+        "number": "Kart nömrəsi",
+        "expiry": "Bitmə tarixi",
+        "cvv": "CVV kodu",
+        "holder": "Kart sahibinin adı"
+      },
+      "group": {
+        "cardInformation": "Kart məlumatları"
+      },
+      "view": {
+        "pay": "Ödə",
+        "secure": "PCI DSS ilə təhlükəsiz ödəniş",
+        "poweredBy": "Payriff tərəfindən hazırlanıb"
+      }
+    },
+    "en": {
+      "number": {
+        "required": "Enter your card number",
+        "incomplete": "Card number is incomplete",
+        "invalid": "Card number is invalid",
+        "unsupported": "This card type is not supported"
+      },
+      "expiry": {
+        "required": "Enter the expiry date",
+        "incomplete": "Expiry date is incomplete",
+        "invalid": "Expiry date is invalid",
+        "expired": "This card has expired"
+      },
+      "cvv": {
+        "required": "Enter the CVV",
+        "incomplete": "CVV is incomplete",
+        "invalid": "CVV is invalid"
+      },
+      "holder": {
+        "required": "Enter the cardholder name",
+        "invalid": "Cardholder name is invalid"
+      },
+      "placeholder": {
+        "number": "1234 1234 1234 1234",
+        "expiry": "MM / YY",
+        "cvv": "CVC",
+        "holder": "Card holder"
+      },
+      "label": {
+        "number": "Card number",
+        "expiry": "Expiry date",
+        "cvv": "Security code",
+        "holder": "Card holder"
+      },
+      "group": {
+        "cardInformation": "Card information"
+      },
+      "view": {
+        "pay": "Pay",
+        "secure": "Proceed securely by PCI DSS",
+        "poweredBy": "Powered by Payriff"
+      }
+    },
+    "ru": {
+      "number": {
+        "required": "Введите номер карты",
+        "incomplete": "Номер карты введён не полностью",
+        "invalid": "Неверный номер карты",
+        "unsupported": "Этот тип карты не поддерживается"
+      },
+      "expiry": {
+        "required": "Введите срок действия",
+        "incomplete": "Срок действия введён не полностью",
+        "invalid": "Неверный срок действия",
+        "expired": "Срок действия карты истёк"
+      },
+      "cvv": {
+        "required": "Введите CVV",
+        "incomplete": "CVV введён не полностью",
+        "invalid": "Неверный CVV"
+      },
+      "holder": {
+        "required": "Введите имя владельца карты",
+        "invalid": "Неверное имя владельца карты"
+      },
+      "placeholder": {
+        "number": "1234 1234 1234 1234",
+        "expiry": "MM / YY",
+        "cvv": "CVC",
+        "holder": "Владелец карты"
+      },
+      "label": {
+        "number": "Номер карты",
+        "expiry": "Срок действия",
+        "cvv": "Код безопасности",
+        "holder": "Владелец карты"
+      },
+      "group": {
+        "cardInformation": "Информация о карте"
+      },
+      "view": {
+        "pay": "Оплатить",
+        "secure": "Безопасная оплата по PCI DSS",
+        "poweredBy": "При поддержке Payriff"
+      }
+    }
+  }
+}

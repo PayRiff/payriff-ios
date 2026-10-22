@@ -1,0 +1,57 @@
+{
+  "description": "Card encryption vectors (backend spec §6 = web SDK fields/crypto.js). TEST key pair only: never ship it. aesKey = bytes 0..31, iv = bytes 0xA0..0xAB. (1) AES-256-GCM(aesKey, iv, utf8(cardJson)) with a 128-bit tag, output ciphertext||tag, Base64, IV NOT prepended, must equal encryptedMessage exactly. (2) cardJson must be built byte-for-byte like JavaScript JSON.stringify of {pan, cardHolder, expiryYear, expiryMonth, cvv} in that key order: no spaces, non-ASCII kept as UTF-8, only \" and \\ escaped, \"/\" NOT escaped. (3) x-secret-key = Base64(RSA-OAEP(SHA-256, MGF1-SHA-256, empty label)(publicKey, aesKey||iv)). OAEP is randomized, so tests decrypt instead: decrypting rsaWrappedKeyIv with testPrivateKeyPkcs8 must give aesKey||iv, and the SDK's own wrap must decrypt the same way. (4) The SDK pins Payriff's production key; SHA-256 of its DER must equal payriffPublicKeySha256.",
+  "testPublicKeySpki": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvi1ml4ZCvcRpp+6htexJlEpoR6/IOw9mVESUz9+RgV7zK56+6KISfTtUpnolBd541aGxnOUuDgH1f8kaAJiB4DCauRx6zVQgixDQ/ZiaayK0EK+lbH+rmebfYYBqjtolTrbRUCqBr/tidwYu0cGjfPgtUByr5d53tz3uoM0jehcAbdlCpGjF0vqT1LHYRIyK1tVCAF0MLT0pmENhpi19dpcFEuOdO9TYaaTHTYM6wJ4i6+Fl3CPZ0jc+0grl3xBv3KZFqIpov6JvNZqSlvSsg7CSOUaRq/C2PPvkhTszdDs8ksAU9gH+q9eFLpr6eE/36NIcbSkqzpCqtHS5CppcyQIDAQAB",
+  "testPrivateKeyPkcs8": "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+LWaXhkK9xGmn7qG17EmUSmhHr8g7D2ZURJTP35GBXvMrnr7oohJ9O1SmeiUF3njVobGc5S4OAfV/yRoAmIHgMJq5HHrNVCCLEND9mJprIrQQr6Vsf6uZ5t9hgGqO2iVOttFQKoGv+2J3Bi7RwaN8+C1QHKvl3ne3Pe6gzSN6FwBt2UKkaMXS+pPUsdhEjIrW1UIAXQwtPSmYQ2GmLX12lwUS45071NhppMdNgzrAniLr4WXcI9nSNz7SCuXfEG/cpkWoimi/om81mpKW9KyDsJI5RpGr8LY8++SFOzN0OzySwBT2Af6r14Uumvp4T/fo0hxtKSrOkKq0dLkKmlzJAgMBAAECggEAAQSUcN467EUMiGwlLeIRwaZomqCfQcMRdsUNGfQHm8TVG5z8bXMuBhq4d2S+OIlLxexZG2UMVLtQAKYqhzzWh7g7rcVQOkB3ftMN8U69EQxIOmVV4I5DrhdS1DTLU5z2JLUv13eT+d8hzek7/F5GiINtPg/Nn9V4eDc8eDXprF+IIZHBjBG/9fDppGuZWz0CmPDUFNEWBhDnA4Td2ECkCmpz+gqBUVn7sH/9STUuvv7+A7wIVj62PJ6zAqOjccwxhlYSytI+Ci8njeVqQWrOWJfP3ALkfUVcSRYprjtcXv8zQCLUwGXlUuF+nFffYW6ZJIwtCxwl045m9bsNkKsloQKBgQDi++p/veZt6Xb/NhUFShT/4ZMA7Dh/gidb1GH7HfsAlLKOb0wrblyp5GjVuzeT6L/erlKfDfLfkuuVxN303crDJOM28Dyl0rUQBj0dqJOFQHU+UIGg3QGykyZFT5W1TL/Ezl827/SZeXjYh9WYbyqDEGgAoyCEUDAt/gwJW36kaQKBgQDWfPr97HpBzjOyTIPYVV8MvH87ccPbNn8vaqzcur9PZFnb9adrxt0tF2UBgHAjus/c/SwNxyGcK2HAafQxLxOhM5zLZgv/TFFh/otztBPIlqAO8XiMDEGbLLWWv2L33PPxi94quVUsue/30BKGZTDu0YEMrJL1tj3PLPUkStdpYQKBgQC3zF2ait8oaUAecGCdI9vVR4eN27n0JiRQy617dk9lrQLZK252TKtkNrxdNXhPoMydOHNWsCjWuVVitUM1oNMrKZeDSQ0TCYfsLeEXPwYVhJhrmS0eYVeajmUTAtqrMDao2qNnDO73x9D/JR7kjD/UWVieC3mtKnGZDHoaqafm4QKBgQC0vu9Xqb7A0343A0mbtR17AyGIu27bvQnisFdpTqnGwn8C3/ks1pEt3WgNouldAqEFzgcguSz2iIxAdEkGZXB6SJ8ZvC3h/rMaDEIBx79gKqZI0W3PPsjOdhe0KCXDT9v2MfKPOEyxeyLgRuRFguKAbeX9AzR4gRGHE5Ck+7iZIQKBgEyO5lOMWRsrVZOrfczs9V9FrEY8J/s+6BjraqJ13q3jvZyshMBwCkL+cgKXOCHsOPxiwE/lrruAVJLjPvV+zNkdBKht3shNuwOnHlAmX6pgl4CQ0YLOQ4q+bM8Ss6tqtaBjoaAmtg44U30xneZIe1A/Hf8pVp23wHCDuJcxwAf0",
+  "aesKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "iv": "oKGio6Slpqeoqaqr",
+  "keyIv": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+goaKjpKWmp6ipqqs=",
+  "rsaWrappedKeyIv": "X7NvEAlnfiHP/2yuFh/8q4rfca72IkGY3FehkLa2eZI/FjKxI6emeh8FrHXjNgpG1d5W4XHp0tyfZlafx9ejMteOBiunEj/H0oOjYp46tdQa1P5kzOZa1JAJCNAW17LDEjQQHGSkh2hQVPj3ueOIpQggAUKxQ2vehkq+1Q8Slcibre7KGd5Z0qduSxDYy+FiAYBpLcHtI9gBHyozrEPmLKTTlCzl3Jm5PTuOFxcNYCR9F5+efoS0YdkcO5ypzRMfYbJDsNTvw4WtGxFWaVnWlGjKk6uzyOJU7uGRSGcJfh061U1MVMZHLnp4AotyJdpnzQnB7mN28BzorUpnHkzQmA==",
+  "aesGcm": [
+    {
+      "card": {
+        "pan": "4111111111111111",
+        "cardHolder": "TEST CARD",
+        "expiryYear": "2030",
+        "expiryMonth": "12",
+        "cvv": "123"
+      },
+      "cardJson": "{\"pan\":\"4111111111111111\",\"cardHolder\":\"TEST CARD\",\"expiryYear\":\"2030\",\"expiryMonth\":\"12\",\"cvv\":\"123\"}",
+      "encryptedMessage": "nToMTCvpOJ1WVLbiNkvx70GdaCGjhnNdviIE5R7ZEUm9GiOa3QBpHwvZV5wpOcKrAzlqageoahczJ1I7xQKnipaOtVwAh8jCkZqPcf23gdWjf8OG/+OoSMxZHPnH7G+urbUZmCHTvCINgDFHGgQSqSk/v7jIhg=="
+    },
+    {
+      "card": {
+        "pan": "5100007346013947",
+        "cardHolder": "ƏLİ O'BRIEN",
+        "expiryYear": "2029",
+        "expiryMonth": "04",
+        "cvv": "783"
+      },
+      "cardJson": "{\"pan\":\"5100007346013947\",\"cardHolder\":\"ƏLİ O'BRIEN\",\"expiryYear\":\"2029\",\"expiryMonth\":\"04\",\"cvv\":\"783\"}",
+      "encryptedMessage": "nToMTCvpOJ1XVLfjN0r37USaaSGhjnZbviIE5R7ZEUm9GiOa3QBpH5kTSAy5WszeBUkPDSzyNlwkJns31gnc1dXOp1USl9TSzcDTOuq2vNO/cubLq7XxWNRXDq6Ttm/3+fIJkSGZt6i8piapxkUBxvu9y9/DenrqKqE="
+    },
+    {
+      "card": {
+        "pan": "4000007546012078",
+        "cardHolder": "Unknown",
+        "expiryYear": "2029",
+        "expiryMonth": "04",
+        "cvv": "893"
+      },
+      "cardJson": "{\"pan\":\"4000007546012078\",\"cardHolder\":\"Unknown\",\"expiryYear\":\"2029\",\"expiryMonth\":\"04\",\"cvv\":\"893\"}",
+      "encryptedMessage": "nToMTCvpOJ1WVbfjN0r360SaaSGgh3VUviIE5R7ZEUm9GiOa3QBpHwryb6ZmDe3bazkjMBK5aAcYO2oshkqngoSOvE0ch4GYhIuNYcKhos6lKZGG9fW7VswWSOyToG+strcJ1jWXgqdYNZQXdBiiK66pNAQ="
+    },
+    {
+      "card": {
+        "pan": "4242424242424242",
+        "cardHolder": "A \"Quoted\" \\ Name/Slash",
+        "expiryYear": "2031",
+        "expiryMonth": "01",
+        "cvv": "000"
+      },
+      "cardJson": "{\"pan\":\"4242424242424242\",\"cardHolder\":\"A \\\"Quoted\\\" \\\\ Name/Slash\",\"expiryYear\":\"2031\",\"expiryMonth\":\"01\",\"cvv\":\"000\"}",
+      "encryptedMessage": "nToMTCvpOJ1WV7PhM0j07ESebSKmhXZeviIE5R7ZEUm9GiOa3QBpHx68WOpYD+yNIn8aakKMRl4PP2Y7iyPp0cfUp0MSwJyQnZCGQeqvvpj3KZmU9vC7VswQRurY6DTZ4OpfwyGUrauv+Spy5v6bCh5yUZ7uF+bZxefvhg/1z2imd5l2J+Ti"
+    }
+  ],
+  "payriffPublicKeySpki": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxRq5a+44T6Dac60XmVRQ/7cpPyFsBnamXbJlRVJk8CnES5Re5tVMohyD0hZr3zcQj+bxodYB4zZpQTPlrXvFBC3zz+rXnGlevxBQ6W2d3QC9q8vWH8p3ZOwTO3qVvDSHH9o+hMMRNbJ7kueq/KZlX/F+bjZ23CZw7iXEGQT3HYVYnnHsvpaguYDteWBag2sPPLLsVjeB3zhTfQ7OsWp5XTkDuRwLugHPvs6RHLcwGCnodukWyvwUaEUQR/kMGC+RbMsAIVkcLMP5csfR3Xo7Gi98+i44iLN00f7gE8QvEmvv8xDspyTAjDEL1a5gK7TijJ3yLG/Bwa1rr1uskYy7lwIDAQAB",
+  "payriffPublicKeySha256": "57bea5eb8ac72125dcda83306b98453840a80fc8ef5aac2798789587666024a5"
+}

@@ -1,0 +1,129 @@
+{
+  "description": "Result JSON shape. See CONTRACT.md §5.3. Each test builds the platform result object that the JSON describes, serialises it, and compares the JSON structurally. Every key must be present (null when unknown); numbers compare numerically; the error message is compared exactly.",
+  "cases": [
+    {
+      "name": "success with a full payment",
+      "json": {
+        "type": "success",
+        "payment": {
+          "orderId": "o1",
+          "status": "APPROVED",
+          "rawStatus": "PAID",
+          "amount": 10.5,
+          "currency": "AZN",
+          "transactionId": "884213"
+        }
+      }
+    },
+    {
+      "name": "declined with a minimal payment",
+      "json": {
+        "type": "declined",
+        "payment": {
+          "orderId": "o1",
+          "status": "DECLINED",
+          "rawStatus": "DECLINED",
+          "amount": null,
+          "currency": null,
+          "transactionId": null
+        }
+      }
+    },
+    {
+      "name": "cancelled by the user before an order existed",
+      "json": {
+        "type": "cancelled",
+        "reason": "userClosed",
+        "payment": null
+      }
+    },
+    {
+      "name": "cancelled because the order expired",
+      "json": {
+        "type": "cancelled",
+        "reason": "expired",
+        "payment": {
+          "orderId": "o1",
+          "status": "EXPIRED",
+          "rawStatus": "EXPIRED",
+          "amount": 1,
+          "currency": "AZN",
+          "transactionId": null
+        }
+      }
+    },
+    {
+      "name": "pending, not final",
+      "json": {
+        "type": "pending",
+        "reason": "notFinal",
+        "payment": {
+          "orderId": "o1",
+          "status": "CREATED",
+          "rawStatus": "CREATED",
+          "amount": null,
+          "currency": null,
+          "transactionId": null
+        }
+      }
+    },
+    {
+      "name": "pending, unverified, unknown order id",
+      "json": {
+        "type": "pending",
+        "reason": "unverified",
+        "payment": {
+          "orderId": "",
+          "status": "UNKNOWN",
+          "rawStatus": null,
+          "amount": null,
+          "currency": null,
+          "transactionId": null
+        }
+      }
+    },
+    {
+      "name": "pending, unexpected status",
+      "json": {
+        "type": "pending",
+        "reason": "unexpectedStatus",
+        "payment": {
+          "orderId": "o1",
+          "status": "REFUNDED",
+          "rawStatus": "REFUNDED",
+          "amount": 0.01,
+          "currency": "AZN",
+          "transactionId": null
+        }
+      }
+    },
+    {
+      "name": "failed with a full error",
+      "json": {
+        "type": "failed",
+        "error": {
+          "code": "API_ERROR",
+          "message": "Application not found!.",
+          "isRetryable": false,
+          "httpStatus": 400,
+          "payriffCode": "01000",
+          "supportTicket": "123456"
+        }
+      }
+    },
+    {
+      "name": "failed with a minimal error",
+      "json": {
+        "type": "failed",
+        "error": {
+          "code": "NETWORK_ERROR",
+          "message": "The Internet connection appears to be offline.",
+          "isRetryable": true,
+          "httpStatus": null,
+          "payriffCode": null,
+          "supportTicket": null
+        }
+      }
+    }
+  ]
+}
