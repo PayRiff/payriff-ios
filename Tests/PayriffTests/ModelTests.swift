@@ -173,7 +173,7 @@ struct ModelTests {
         #expect(String(decoding: try JSONEncoder().encode(PayriffPaymentStatus.refundInProgress), as: UTF8.self) == #""REFUND_IN_PROGRESS""#)
     }
 
-    @Test("Logs show non-http(s) URLs only as <scheme>:… (CONTRACT §11)")
+    @Test("Logs show non-http(s) URLs only as <scheme>:…, other hosts' URLs as their origin (CONTRACT §11)")
     func urlRedaction() {
         #expect(Log.redactedURL(URL(string: "tel:+994121234567")) == "tel:…")
         #expect(Log.redactedURL(URL(string: "mailto:support@payriff.com")) == "mailto:…")
@@ -181,7 +181,8 @@ struct ModelTests {
         #expect(Log.redactedURL(URL(string: "javascript:alert(1)")) == "javascript:…")
         #expect(Log.redactedURL(URL(string: "intent://pay?id=1#Intent;scheme=abbpay;end")) == "intent:…")
         #expect(Log.redactedURL(URL(string: "BIRBANK://payment?id=1")) == "birbank:…")
-        #expect(Log.redactedURL(URL(string: "HTTPS://pay.payriff.com/r/1?type=direct#x")) == "HTTPS://pay.payriff.com/r/1")
+        #expect(Log.redactedURL(URL(string: "HTTPS://pay.payriff.com/r/1?type=direct#x")) == "https://pay.payriff.com")
+        #expect(Log.redactedURL(URL(string: "https://api.payriff.com/api/v3/client/orders/7c9e6679-7425-40de-944b-e07fc1f90ae7/three-ds?x=1")) == "https://api.payriff.com/api/v3/client/orders/7c9e…0ae7/three-ds")
         #expect(Log.redactedURL(nil) == "nil")
     }
 

@@ -36,8 +36,9 @@ public enum Payriff {
         var clientAppId: @Sendable () -> String?
         /// Whether this is a debug build: the `DEBUG` compilation condition of this module, which
         /// follows the app's build configuration for Swift Package Manager and CocoaPods. Release
-        /// builds never log request and response details (§11, ``HTTPLog``); tests switch this to
-        /// exercise both.
+        /// builds never log request and response details (§11, ``HTTPLog``) and ignore
+        /// ``PayriffConfig/allowCompromisedDevices`` (§16.16, ``DeviceIntegrityPolicy``); tests
+        /// switch this to exercise both.
         var isDebugBuild: Bool
         /// The device integrity signals that match now (CONTRACT §16.16, ``DeviceIntegrity``).
         var deviceSignals: @Sendable () -> [DeviceIntegritySignal]
@@ -67,7 +68,8 @@ public enum Payriff {
     /// not start with `pr_pk_live_` (a secret key is always refused), is logged as a warning
     /// (`Invalid configuration: …`), and every later call fails with `INVALID_CONFIG`:
     /// ``confirmCardPayment(_:orderId:clientSecret:from:)`` returns ``PayriffResult/failed(_:)``
-    /// and ``retrieveOrder(orderId:clientSecret:)`` throws.
+    /// and ``retrieveOrder(orderId:clientSecret:)`` throws. Outside debug builds,
+    /// ``PayriffConfig/allowCompromisedDevices`` is ignored, and a warning says so.
     ///
     /// - Parameter config: The configuration.
     public static func configure(_ config: PayriffConfig) {
@@ -76,6 +78,9 @@ public enum Payriff {
         Log.info("Configured Payriff \(version): environment=\(config.environment.rawValue) publishableKey=\(ResponseParser.nonBlank(config.publishableKey) == nil ? "none" : "set") language=\(config.language?.rawValue ?? "device")")
         if case .failure(let problem) = ClientCredentials.publishableKey(config.publishableKey) {
             Log.warning("Invalid configuration: \(problem.message)")
+        }
+        if config.allowCompromisedDevices, !services.isDebugBuild {
+            Log.warning(DeviceIntegrityPolicy.ignoredOptOutWarning)
         }
     }
 

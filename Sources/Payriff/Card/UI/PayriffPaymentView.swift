@@ -20,7 +20,7 @@ import UIKit
 /// when a hooking tool such as Frida or, in an App Store or TestFlight build, a debugger is found,
 /// it says that card payments aren't available on this device, keeps Pay disabled, does not read
 /// the order and passes `failed(DEVICE_COMPROMISED)` to ``onResult`` once, unless
-/// ``PayriffConfig/allowCompromisedDevices`` is on.
+/// ``PayriffConfig/allowCompromisedDevices`` is on in a debug build.
 ///
 /// Give it the whole screen: it adds the safe area to its padding, scrolls when the keyboard is up
 /// and keeps the footer at the bottom when there is room. Call ``Payriff/configure(_:)`` first.

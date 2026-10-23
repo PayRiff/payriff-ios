@@ -98,44 +98,38 @@ struct HTTPLogTests {
         #expect(HTTPLog.redactedBody(Data(#"{"key":1,"value":"shown"}"#.utf8)).serialized == #"{"key":1,"value":"shown"}"#)
     }
 
-    @Test("Body: http(s) URLs lose their query and fragment")
+    @Test("Body: http(s) URLs lose their user info, query and fragment, and show a path only on Payriff's API hosts")
     func urlsInBodies() {
         #expect(HTTPLog.redactedBody(Data(#"{"paymentUrl":"https://pay.payriff.com/r/o1?type=direct#x"}"#.utf8)) == .object([
-            ("paymentUrl", .string("https://pay.payriff.com/r/o1")),
+            ("paymentUrl", .string("https://pay.payriff.com")),
         ]))
         #expect(HTTPLog.redactedBody(Data(#"{"a":"HTTP://Bank.example/acs#frag","b":"see https://x.example/?q=1","c":["https://cb.example/r?status=ok"]}"#.utf8)) == .object([
-            ("a", .string("HTTP://Bank.example/acs")),
+            ("a", .string("http://bank.example")),
             ("b", .string("see https://x.example/?q=1")),
-            ("c", .array([.string("https://cb.example/r")])),
+            ("c", .array([.string("https://cb.example")])),
+        ]))
+        // A bank's 3-D Secure page shows as its origin; Payriff's own URLs keep the path, with
+        // long segments shortened.
+        #expect(HTTPLog.redactedBody(Data(#"{"payload":{"accessUrl":"https://user:pass@acs.bank.example:8443/challenge/SESSION-TOKEN-0123456789?id=1","callbackUrl":"https://api.payriff.com/api/v3/gateway/kapital/callback/7c9e6679-7425-40de-944b-e07fc1f90ae7?x=1#y","redirectUrl":"https://user:pass@acs.bank.example/acs?id=1","steps":[{"methodUrl":"HTTPS://ACS.BANK.EXAMPLE/method/abc"}]}}"#.utf8)) == .object([
+            ("payload", .object([
+                ("accessUrl", .string("https://acs.bank.example:8443")),
+                ("callbackUrl", .string("https://api.payriff.com/api/v3/gateway/kapital/callback/7c9e…0ae7")),
+                ("redirectUrl", .string("https://acs.bank.example")),
+                ("steps", .array([.object([("methodUrl", .string("https://acs.bank.example"))])])),
+            ])),
         ]))
     }
 
-    @Test("URLs: http(s) without query and fragment; other schemes only as <scheme>:…")
-    func urls() {
-        #expect(HTTPLog.redactedURL("https://api.payriff.com/api/v3/client/orders/o1?x=1") == "https://api.payriff.com/api/v3/client/orders/o1")
-        #expect(HTTPLog.redactedURL("HTTPS://Pay.payriff.com/r/1#frag?x") == "HTTPS://Pay.payriff.com/r/1")
-        #expect(HTTPLog.redactedURL("/api/v3/client/orders/o%201?x=1") == "/api/v3/client/orders/o%201")
-        #expect(HTTPLog.redactedURL("mailto:someone@example.com?subject=x") == "mailto:…")
-        #expect(HTTPLog.redactedURL("tel:+994501234567") == "tel:…")
-        #expect(HTTPLog.redactedURL("") == "")
-    }
-
-    @Test("URLs: the user name and password before the host are dropped, as Log.redactedURL does")
-    func urlCredentials() {
-        let url = "https://user:pass@acs.bank.example/challenge?id=1#x"
-        #expect(HTTPLog.redactedURL(url) == "https://acs.bank.example/challenge")
-        #expect(HTTPLog.redactedURL(url) == Log.redactedURL(URL(string: url)))
-        #expect(HTTPLog.redactedURL("HTTPS://user@Bank.example") == "HTTPS://Bank.example")
-        #expect(HTTPLog.redactedURL("https://a@b:c@acs.bank.example:8443/acs") == "https://acs.bank.example:8443/acs", "up to the last @ of the authority")
-        #expect(HTTPLog.redactedURL("//user:pass@acs.bank.example/acs") == "//acs.bank.example/acs")
-        // An @ after the authority is not user info.
-        #expect(HTTPLog.redactedURL("https://pay.payriff.com/r/@o1") == "https://pay.payriff.com/r/@o1")
-        #expect(HTTPLog.redactedURL("https://pay.payriff.com?email=a@b.example") == "https://pay.payriff.com")
-        #expect(HTTPLog.redactedURL("/r/a@b?x=1") == "/r/a@b")
-        // In bodies too.
-        #expect(HTTPLog.redactedBody(Data(#"{"redirectUrl":"https://user:pass@acs.bank.example/acs?id=1"}"#.utf8)) == .object([
-            ("redirectUrl", .string("https://acs.bank.example/acs")),
-        ]))
+    @Test("The logged url: no user info, query or fragment, long path segments shortened, other hosts as their origin")
+    func loggedURL() throws {
+        func url(_ raw: String) throws -> String? {
+            let entry = HTTPLog.describeRequest(method: "GET", url: raw, headers: [:], body: nil)
+            return try #require(try JSONSerialization.jsonObject(with: Data(entry.utf8)) as? [String: Any])["url"] as? String
+        }
+        #expect(try url("https://user:pass@api.payriff.com/api/v3/client/orders/7c9e6679-7425-40de-944b-e07fc1f90ae7/pay?x=1#y") == "https://api.payriff.com/api/v3/client/orders/7c9e…0ae7/pay")
+        #expect(try url("HTTPS://SB-API.payriff.com:443/api/v3/client/orders/o1/three-ds") == "https://sb-api.payriff.com:443/api/v3/client/orders/o1/three-ds")
+        #expect(try url("https://acs.bank.example/challenge?id=1") == "https://acs.bank.example")
+        #expect(try url("") == "")
     }
 
     @Test("Body: empty, non-JSON, very long and very deep bodies are described, not logged")
@@ -397,7 +391,7 @@ extension GlobalStateTests {
             "code": "00000",
             "message": "OK",
             "payload": {
-              "accessUrl": "https://acs.bank.example/challenge",
+              "accessUrl": "https://acs.bank.example",
               "channel": "KAPITAL",
               "clientRequest": [
                 {
@@ -447,7 +441,7 @@ extension GlobalStateTests {
 
             let details = Self.httpDetails(recorder.all)
             #expect(details.count == (isDebugBuild ? 2 : 0), "debug build: \(isDebugBuild)")
-            #expect(recorder.contains("GET /api/v3/client/orders/o1 -> HTTP 200"), "the one-line entries stay")
+            #expect(recorder.contains("GET https://sb-api.payriff.com/api/v3/client/orders/o1 -> HTTP 200"), "the one-line entries stay")
             if isDebugBuild {
                 let urls = try details.map { try Self.detailsJSON($0)["url"] as? String }
                 #expect(urls == ["https://sb-api.payriff.com/api/v3/client/orders/o1", "https://sb-api.payriff.com/api/v3/client/orders/o1"])
@@ -455,6 +449,35 @@ extension GlobalStateTests {
             for secret in [Self.clientSecret, Self.publishableKey] {
                 #expect(!recorder.all.contains { $0.message.contains(secret) })
             }
+        }
+    }
+
+    @Test("Every entry shows the request URL with a long order id shortened, in debug and release builds")
+    func requestURLsShortenTheOrderId() async throws {
+        let recorder = LogRecorder()
+        recorder.install()
+        defer {
+            Payriff.reset()
+            PayriffLogger.onLog = nil
+        }
+        let orderId = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        let shown = "https://sb-api.payriff.com/api/v3/client/orders/7c9e…0ae7"
+        for isDebugBuild in [true, false] {
+            Payriff.reset()
+            Payriff.services.isDebugBuild = isDebugBuild
+            Payriff.services.transport = FakeTransport(status: 200, body: #"{"code":"00000","payload":{"orderId":"\#(orderId)","status":"CREATED","paymentMethods":["CARD"]}}"#)
+            Payriff.configure(PayriffConfig(publishableKey: Self.publishableKey, environment: .sandbox, enableLogging: true))
+            recorder.clear()
+            _ = try await Payriff.retrieveOrder(orderId: orderId, clientSecret: Self.clientSecret)
+
+            #expect(recorder.contains("GET \(shown) -> HTTP 200"), "debug build: \(isDebugBuild)")
+            let details = Self.httpDetails(recorder.all)
+            let urls = try details.map { try Self.detailsJSON($0)["url"] as? String }
+            #expect(urls == (isDebugBuild ? [shown, shown] : []))
+            // Only the response body, a debug-build detail, holds the id itself (as `orderId`).
+            let outsideBodies = recorder.all.filter { entry in !details.contains { $0.message == entry.message } }
+            #expect(!outsideBodies.contains { $0.message.contains(orderId) })
+            #expect(!details.contains { $0.message.contains("/orders/\(orderId)") })
         }
     }
 }

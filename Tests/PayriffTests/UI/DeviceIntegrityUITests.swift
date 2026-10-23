@@ -12,11 +12,14 @@ extension GlobalStateTests {
     struct DeviceIntegrityEntry {
         static let orderBody = #"{"code":"00000","payload":{"orderId":"o1","amount":1.02,"currency":"AZN","status":"CREATED","paymentMethods":["CARD"]}}"#
 
-        private func configure(signals: [DeviceIntegritySignal], allowCompromisedDevices: Bool = false) -> FakeTransport {
+        /// `isDebugBuild` stands for the `DEBUG` condition of the SDK, the only build in which
+        /// `allowCompromisedDevices` counts.
+        private func configure(signals: [DeviceIntegritySignal], allowCompromisedDevices: Bool = false, isDebugBuild: Bool = true) -> FakeTransport {
             Payriff.reset()
             let transport = FakeTransport(status: 200, body: Self.orderBody)
             Payriff.services.transport = transport
             Payriff.services.deviceSignals = { signals }
+            Payriff.services.isDebugBuild = isDebugBuild
             Payriff.configure(PayriffConfig(
                 publishableKey: GlobalStateTests.publishableKey,
                 environment: .sandbox,
@@ -40,7 +43,7 @@ extension GlobalStateTests {
             #expect(form.textField(for: .number)?.isEnabled == true)
         }
 
-        @Test("With allowCompromisedDevices the payment goes on after a warning that names the signals")
+        @Test("With allowCompromisedDevices in a debug build the payment goes on after a warning that names the signals")
         func confirmAllowed() async throws {
             let recorder = LogRecorder()
             recorder.install()
@@ -54,6 +57,24 @@ extension GlobalStateTests {
             #expect(result.error?.code == .validationFailed, "the empty form is checked next")
             #expect(transport.requests.isEmpty)
             #expect(recorder.all.contains { $0.level == .warning && $0.message.hasSuffix("Signals: debugger, DYLD_INSERT_LIBRARIES.") })
+        }
+
+        @Test("Outside debug builds confirmCardPayment ignores allowCompromisedDevices: DEVICE_COMPROMISED, nothing sent, a warning says so")
+        func confirmOptOutIgnored() async throws {
+            let recorder = LogRecorder()
+            recorder.install()
+            let transport = configure(signals: [.frida], allowCompromisedDevices: true, isDebugBuild: false)
+            defer {
+                PayriffLogger.onLog = nil
+                Payriff.reset()
+            }
+            let form = PayriffCardForm(showsHolder: false, language: .en)
+            let result = await Payriff.confirmCardPayment(form, orderId: "o1", clientSecret: GlobalStateTests.clientSecret)
+            #expect(result == .failed(.deviceCompromised))
+            #expect(transport.requests.isEmpty)
+            #expect(!Payriff.isPaymentInProgress)
+            #expect(recorder.contains(DeviceIntegrityPolicy.ignoredOptOutWarning), "configure says so")
+            #expect(recorder.all.contains { $0.level == .warning && $0.message == "Device integrity: allowCompromisedDevices is ignored outside debug builds; card payments are refused on this device. Signals: Frida." })
         }
 
         @Test("The payment view on a compromised device: view.deviceNotSupported, Pay disabled, no order read, DEVICE_COMPROMISED reported once")
@@ -82,7 +103,7 @@ extension GlobalStateTests {
             #expect(results.count == 1)
         }
 
-        @Test("The payment view with allowCompromisedDevices reads the order as usual")
+        @Test("The payment view with allowCompromisedDevices in a debug build reads the order as usual")
         func paymentViewAllowed() async throws {
             let transport = configure(signals: [.sandboxWrite], allowCompromisedDevices: true)
             defer { Payriff.reset() }
@@ -93,6 +114,20 @@ extension GlobalStateTests {
             #expect(transport.requests.count == 1)
             #expect(results.isEmpty)
             #expect(view.errorLabel.isHidden)
+        }
+
+        @Test("Outside debug builds the payment view ignores allowCompromisedDevices: refused as without it")
+        func paymentViewOptOutIgnored() async throws {
+            let transport = configure(signals: [.sandboxWrite], allowCompromisedDevices: true, isDebugBuild: false)
+            defer { Payriff.reset() }
+            var results: [PayriffResult] = []
+            let view = PayriffPaymentView(orderId: "o1", clientSecret: GlobalStateTests.clientSecret, language: .en) { results.append($0) }
+            view.appear()
+            #expect(results == [.failed(.deviceCompromised)])
+            #expect(view.errorLabel.text == "Card payments aren't available on this device for security reasons")
+            #expect(!view.payButton.isEnabled)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            #expect(transport.requests.isEmpty, "the order is not read")
         }
 
         @Test("A clean device reads the order when the view appears")

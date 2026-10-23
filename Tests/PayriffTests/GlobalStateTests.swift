@@ -69,7 +69,7 @@ struct GlobalStateTests {
         PayriffLogger.onLog = nil
     }
 
-    @Test("configure logs whether a publishable key is set, never the key; URLs lose their query and credentials")
+    @Test("configure logs whether a publishable key is set, never the key; URLs lose their query, credentials and, off Payriff's API, their path")
     func redaction() {
         let recorder = LogRecorder()
         recorder.install()
@@ -78,7 +78,7 @@ struct GlobalStateTests {
         #expect(!recorder.all.contains { $0.message.contains(Self.publishableKey) })
         Payriff.configure(PayriffConfig(enableLogging: true))
         #expect(recorder.contains("environment=production publishableKey=none language=device"))
-        #expect(Log.redactedURL(URL(string: "https://user:pass@acs.bank.example/challenge?id=1#x")) == "https://acs.bank.example/challenge")
+        #expect(Log.redactedURL(URL(string: "https://user:pass@acs.bank.example/challenge?id=1#x")) == "https://acs.bank.example")
         PayriffLogger.onLog = nil
     }
 }

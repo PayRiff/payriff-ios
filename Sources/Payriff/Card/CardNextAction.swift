@@ -35,7 +35,8 @@ enum CardNextAction: Sendable, Equatable, CustomStringConvertible, CustomReflect
         return false
     }
 
-    /// The action type, for logs (never the URLs' queries or the form values).
+    /// The action type, for logs: the URLs redacted as in every log entry (CONTRACT §11), never
+    /// the form values.
     var description: String {
         switch self {
         case .challenge(let url, let form): return "challenge(\(Log.redactedURL(url)), \(form.count) field(s))"

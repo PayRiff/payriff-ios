@@ -175,7 +175,7 @@ extension Payriff {
     /// 1. The device is checked (CONTRACT §16.16). On a jailbroken device, or when a hooking tool
     ///    such as Frida or, in an App Store or TestFlight build, a debugger is found, the call
     ///    returns `.failed` with `DEVICE_COMPROMISED` and nothing is sent, unless
-    ///    ``PayriffConfig/allowCompromisedDevices`` is on.
+    ///    ``PayriffConfig/allowCompromisedDevices`` is on in a debug build.
     /// 2. The form is validated. Invalid fields show their errors and the call returns
     ///    `.failed` with `VALIDATION_FAILED` and ``PayriffError/fields``; nothing is sent.
     /// 3. The order is loaded; it must be payable by card (`ORDER_NOT_PAYABLE` otherwise).

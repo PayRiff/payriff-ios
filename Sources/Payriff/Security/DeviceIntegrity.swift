@@ -282,16 +282,29 @@ struct SystemDeviceProbes: DeviceIntegrityProbes {
 
 /// The device integrity policy at the three points of a card payment (CONTRACT §16.16).
 enum DeviceIntegrityPolicy {
-    /// `DEVICE_COMPROMISED` when a signal matched and `allowCompromisedDevices` is off; `nil` when
-    /// none matched, or when the app opted in, which only logs a warning that names the signals.
-    static func decide(_ signals: [DeviceIntegritySignal], allowCompromisedDevices: Bool) -> PayriffError? {
+    /// The warning of ``Payriff/configure(_:)`` when `allowCompromisedDevices` is on in a build
+    /// that ignores it.
+    static let ignoredOptOutWarning = "Device integrity: allowCompromisedDevices is ignored outside debug builds, so card payments are refused on a compromised device."
+
+    /// `DEVICE_COMPROMISED` when a signal matched, unless the app opted in with
+    /// `allowCompromisedDevices` in a debug build; `nil` when no signal matched, or after the
+    /// opt-in, which only logs a warning that names the signals.
+    ///
+    /// The opt-in works only in debug builds (`isDebugBuild`, the `DEBUG` compilation condition of
+    /// this module): in any other build it is ignored with a warning, and the device is refused
+    /// as if it were off, so leaving it on cannot reach production.
+    static func decide(_ signals: [DeviceIntegritySignal], allowCompromisedDevices: Bool, isDebugBuild: Bool) -> PayriffError? {
         guard !signals.isEmpty else { return nil }
         let names = signals.map(\.rawValue).joined(separator: ", ")
-        if allowCompromisedDevices {
+        if allowCompromisedDevices, isDebugBuild {
             Log.warning("Device integrity: allowCompromisedDevices is on, so the card payment continues on a compromised device. Signals: \(names).")
             return nil
         }
-        Log.warning("Device integrity: card payments are refused on this device. Signals: \(names).")
+        if allowCompromisedDevices {
+            Log.warning("Device integrity: allowCompromisedDevices is ignored outside debug builds; card payments are refused on this device. Signals: \(names).")
+        } else {
+            Log.warning("Device integrity: card payments are refused on this device. Signals: \(names).")
+        }
         return .deviceCompromised
     }
 }
@@ -301,9 +314,9 @@ extension Payriff {
     /// tool such as Frida or, in an App Store or TestFlight build, a debugger is attached.
     ///
     /// Card payments fail with `DEVICE_COMPROMISED` on such a device unless
-    /// ``PayriffConfig/allowCompromisedDevices`` is on; this property does not depend on that
-    /// setting. Use it to decide early, for example to offer another payment method. It is always
-    /// `false` on the simulator and on a Mac.
+    /// ``PayriffConfig/allowCompromisedDevices`` is on in a debug build; this property does not
+    /// depend on that setting. Use it to decide early, for example to offer another payment
+    /// method. It is always `false` on the simulator and on a Mac.
     ///
     /// The checks run on the device and stop the common tools; a determined attacker can get past
     /// them. Each read runs the hooking, Frida and debugger checks again; it takes up to about
@@ -314,7 +327,12 @@ extension Payriff {
 
     /// The policy of CONTRACT §16.16 at one of the three points of a payment: when the payment
     /// view appears, when `confirmCardPayment` starts and right before the card is encrypted.
+    /// `allowCompromisedDevices` counts only in a debug build (``Services/isDebugBuild``).
     static func deviceIntegrityError(allowCompromisedDevices: Bool) -> PayriffError? {
-        DeviceIntegrityPolicy.decide(services.deviceSignals(), allowCompromisedDevices: allowCompromisedDevices)
+        DeviceIntegrityPolicy.decide(
+            services.deviceSignals(),
+            allowCompromisedDevices: allowCompromisedDevices,
+            isDebugBuild: services.isDebugBuild
+        )
     }
 }

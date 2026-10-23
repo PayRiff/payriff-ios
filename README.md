@@ -430,7 +430,7 @@ Fonts scale with Dynamic Type and rows grow with them. Colours you set are used 
 | `environment` | `PayriffEnvironment` | `.production` | `.production` (`https://api.payriff.com`) or `.sandbox` (`https://sb-api.payriff.com`, provisional until Payriff confirms the sandbox host). |
 | `language` | `PayriffLanguage?` | `nil` | `.az`, `.en` or `.ru` for the payment view, the card form and the 3-D Secure sheet. `nil` uses the device language (`az*` → AZ, `ru*` → RU, otherwise EN). |
 | `enableLogging` | `Bool` | `false` | Emit log entries (see [Logging](#logging)). |
-| `allowCompromisedDevices` | `Bool` | `false` | `true` lets card payments run on a jailbroken or hooked device, and the SDK only logs a warning that names what it found. For development on test devices only, never in an app you ship ([Security](#security)). |
+| `allowCompromisedDevices` | `Bool` | `false` | `true` lets card payments run on a jailbroken or hooked test device, and the SDK only logs a warning that names what it found. **Debug builds only:** in any other build, such as one for the App Store or TestFlight, the SDK ignores it and logs a warning, and a compromised device is refused as with `false` ([Security](#security)). |
 
 The look is set on the view itself: `PayriffPaymentViewStyle` for the payment view, `PayriffCardFormStyle` for the card form. `print(config)`, `debugPrint(config)` and `dump(config)` show the publishable key only as `pr_pk_live_***(<length>)`.
 
@@ -482,7 +482,7 @@ A pending result is not proof that nothing was paid. Before you let the customer
 | `INVALID_CONFIG` | `publishableKey` is missing or is not `pr_pk_live_…`. |
 | `INVALID_ORDER` | The order id is blank, or the client secret is not `pr_cs_…`. |
 | `PAYMENT_IN_PROGRESS` | Another card payment of the SDK is still running. |
-| `DEVICE_COMPROMISED` | The device is jailbroken, or a hooking tool such as Frida or, in an App Store or TestFlight build, a debugger was found, and `allowCompromisedDevices` is off ([Security](#security)). Nothing was sent. Not retryable and not fatal: the order can still be paid on another device. |
+| `DEVICE_COMPROMISED` | The device is jailbroken, or a hooking tool such as Frida or, in an App Store or TestFlight build, a debugger was found, and `allowCompromisedDevices` is off or, outside debug builds, ignored ([Security](#security)). Nothing was sent. Not retryable and not fatal: the order can still be paid on another device. |
 | `VALIDATION_FAILED` | The card form is not valid; nothing was sent. `fields` lists the fields, and the form shows the errors. |
 | `ORDER_NOT_PAYABLE` | The order is not `CREATED` or `PENDING`, `CARD` is not one of its payment methods, or HTTP 400. |
 | `UNAUTHORIZED` | HTTP 401: the publishable key or this app was rejected. Fatal. |
@@ -507,8 +507,8 @@ PayriffLogger.onLog = { entry in
 Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `message`, a `timestamp` and `formatted`, the `[Payriff] [LEVEL] message` line. Entries also go to the unified log (subsystem `com.payriff.sdk`): readable in debug builds, marked private in release builds. The handler can be called on any thread.
 
 - Logs never contain card data, the client secret, the publishable key, the encrypted card, `x-secret-key` or 3-D Secure form values.
-- They do contain order ids, statuses, amounts and URL paths. Keep them in your own diagnostics and do not forward `onLog` to third-party analytics or crash reporters.
-- http(s) URLs are logged without query, fragment, user name and password; other schemes only as `<scheme>:…`.
+- They do contain order ids, statuses, amounts and the paths of Payriff's API URLs. Keep them in your own diagnostics and do not forward `onLog` to third-party analytics or crash reporters.
+- URLs never show a user name, password, query or fragment. Only URLs of Payriff's API (`api.payriff.com`, `sb-api.payriff.com`) show their path, and a path segment of 16 or more characters only as its first and last 4 characters (`https://api.payriff.com/api/v3/client/orders/7c9e…0ae7/pay`). Any other host, such as a bank's 3-D Secure page, shows as `https://host[:port]` only, and other schemes only as `<scheme>:…`. The same rule applies to the request and response details below and to the URLs in their bodies.
 - Debug builds also log every API request and response at `debug` level as pretty-printed JSON (`HTTP request` / `HTTP response`: method, URL, headers and body), with every secret shown only as `***(<length>)`. Release builds never log them.
 
 ## Security
@@ -516,12 +516,12 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
 - **Certificate pinning.** Every Client API call of the SDK (the order, pay, the 3-D Secure step and the status) to `api.payriff.com` and `sb-api.payriff.com` is pinned. The connection is accepted only when iOS trusts the certificate chain for the host (chain, expiry, host name) and a key of that chain is one of Payriff's pinned CA keys: the current Sectigo intermediate and roots, and backup roots of other major CAs. They are CA keys, not the server's own key, so Payriff's yearly certificate renewal keeps working. A certificate that fails, for example from a proxy such as Charles or Proxyman, fails the call with `NETWORK_ERROR` (`isRetryable` is `false`, "Payriff's server certificate could not be verified."), and nothing is sent. No setting turns pinning off, in any build. Debug builds log every request and response ([Logging](#logging)), so you do not need a proxy to see the traffic.
 - **Not pinned: the 3-D Secure pages.** They are the banks' own pages, so they load in the SDK's sheet with iOS's usual certificate checks.
 - **Device integrity.** Card payments are refused on a jailbroken device and when a hooking tool is loaded or running (Substrate, libhooker, ElleKit, Frida and the like). In App Store and TestFlight builds an attached debugger and `DYLD_INSERT_LIBRARIES` count too; Xcode uses both when it runs your app, so development is not blocked. The SDK checks when the payment view appears, when `confirmCardPayment` starts and right before the card is encrypted. `confirmCardPayment` then returns `.failed` with `DEVICE_COMPROMISED` and nothing is sent; the payment view says "Card payments aren't available on this device for security reasons", keeps Pay disabled, does not read the order and passes `DEVICE_COMPROMISED` to `onResult` once. `Payriff.retrieveOrder` is never blocked. `Payriff.isDeviceCompromised` lets you decide early, for example to offer another payment method. Nothing is checked on the simulator or on a Mac. The checks run on the device and stop the common tools; a determined attacker can get past them.
-- **Opting out for development.** On a jailbroken test device, set `allowCompromisedDevices` in debug builds only. The SDK then only logs a warning that names what it found, such as `jailbreak files` or `Frida` (turn on `enableLogging` to see it). Never ship it on:
+- **Opting out for development.** On a jailbroken test device, set `allowCompromisedDevices`. The SDK then only logs a warning that names what it found, such as `jailbreak files` or `Frida` (turn on `enableLogging` to see it). It works only in debug builds, when the SDK is compiled with the `DEBUG` condition, which follows your app's build configuration with Swift Package Manager and CocoaPods. In any other build, such as a Release build for the App Store or TestFlight, the SDK ignores it: a compromised device is refused as with `false`, and a warning says `allowCompromisedDevices is ignored outside debug builds`. So a setting left on can never reach your customers. Still keep it behind `#if DEBUG`:
 
   ```swift
   var config = PayriffConfig(publishableKey: "pr_pk_live_…")
   #if DEBUG
-  config.allowCompromisedDevices = true   // a jailbroken test device; never in a release build
+  config.allowCompromisedDevices = true   // a jailbroken test device; ignored outside debug builds
   #endif
   Payriff.configure(config)
   ```
@@ -584,7 +584,8 @@ Debug builds also write the SDK log to `Documents/payriff-sdk.log` in the app's 
 | `SESSION_EXPIRED` | The order does not exist in this environment, or its client secret expired: create a new order. |
 | `ORDER_NOT_PAYABLE` | The order was already paid, cancelled or expired, or does not accept cards. |
 | `NETWORK_ERROR`: "Payriff's server certificate could not be verified." | A proxy (Charles, Proxyman, mitmproxy) or a network that intercepts TLS sits between the app and Payriff, or the device's date is wrong. The SDK's connections are pinned: turn the proxy off. Debug builds log the traffic ([Logging](#logging)). |
-| `DEVICE_COMPROMISED` on a test device | The device is jailbroken, a hooking tool such as Frida runs, or a debugger is attached to an App Store or TestFlight build. Turn on `enableLogging` to see which signal matched. For development, set `allowCompromisedDevices` in debug builds only ([Security](#security)). |
+| `DEVICE_COMPROMISED` on a test device | The device is jailbroken, a hooking tool such as Frida runs, or a debugger is attached to an App Store or TestFlight build. Turn on `enableLogging` to see which signal matched. For development, set `allowCompromisedDevices` and run a debug build ([Security](#security)). |
+| `DEVICE_COMPROMISED` although `allowCompromisedDevices` is on | The setting works only in debug builds. A Release build (App Store, TestFlight, ad hoc) ignores it and logs `allowCompromisedDevices is ignored outside debug builds`. Run the Debug configuration on the test device. |
 | The payment view's Pay button stays disabled | The order is still loading, cannot be paid by card or did not load (the line under the button says why), the form is not complete, or card payments are refused on this device ([Security](#security)). |
 | Need more detail | Set `enableLogging: true` and read `PayriffLogger.onLog` or the Xcode console. |
 

@@ -45,14 +45,19 @@ public struct PayriffConfig: Sendable {
     /// Enables SDK logging (see ``PayriffLogger``). Defaults to `false`.
     public var enableLogging: Bool
 
-    /// Lets card payments run on a compromised device (CONTRACT §16.16). Defaults to `false`.
+    /// Lets card payments run on a compromised device in debug builds, for development on
+    /// jailbroken test devices (CONTRACT §16.16). Defaults to `false`.
     ///
     /// By default the SDK refuses card payments on a jailbroken device and when a hooking tool such
     /// as Frida or, in an App Store or TestFlight build, a debugger is found: they fail with
     /// `DEVICE_COMPROMISED`, and ``PayriffPaymentView`` says that card payments aren't available on
-    /// this device. With `true` the SDK only logs a warning that names what it found. Set it only
-    /// for development on jailbroken test devices, for example in debug builds, never in an app you
-    /// ship.
+    /// this device. With `true` the SDK only logs a warning that names what it found.
+    ///
+    /// It works only in debug builds: when the SDK is compiled with the `DEBUG` condition, which
+    /// follows your app's build configuration with Swift Package Manager and CocoaPods. In any
+    /// other build, such as a Release build for the App Store or TestFlight, the SDK ignores it and
+    /// logs a warning, and a compromised device is refused as with `false`, so leaving it on can
+    /// never reach your customers.
     public var allowCompromisedDevices: Bool
 
     /// Creates a configuration.
@@ -62,8 +67,8 @@ public struct PayriffConfig: Sendable {
     ///   - environment: The environment. Defaults to production.
     ///   - language: The default language, or `nil` for the device language.
     ///   - enableLogging: Whether the SDK emits log entries.
-    ///   - allowCompromisedDevices: Whether card payments run on a jailbroken or hooked device
-    ///     (development only). Defaults to `false`.
+    ///   - allowCompromisedDevices: Whether card payments run on a jailbroken or hooked device;
+    ///     ignored outside debug builds. Defaults to `false`.
     public init(
         publishableKey: String? = nil,
         environment: PayriffEnvironment = .production,

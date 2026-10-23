@@ -45,8 +45,9 @@ public struct PayriffError: Error, Sendable, Hashable, LocalizedError, CustomStr
         case unexpectedResponse = "UNEXPECTED_RESPONSE"
         /// The device is jailbroken, or a hooking tool such as Frida or, in an App Store or
         /// TestFlight build, a debugger was found (CONTRACT §16.16), and
-        /// ``PayriffConfig/allowCompromisedDevices`` is off. Nothing was sent. Not retryable and
-        /// not fatal: the order can still be paid on another device.
+        /// ``PayriffConfig/allowCompromisedDevices`` is off or, outside debug builds, ignored.
+        /// Nothing was sent. Not retryable and not fatal: the order can still be paid on another
+        /// device.
         case deviceCompromised = "DEVICE_COMPROMISED"
         /// Anything else. Never retryable.
         case unknown = "UNKNOWN"

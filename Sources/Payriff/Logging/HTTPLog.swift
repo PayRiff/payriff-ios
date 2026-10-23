@@ -14,7 +14,9 @@ import Foundation
 /// - The fields in ``secretFields`` show as `***(<length>)` at any depth, and the `value` of a
 ///   `{key, value}` form field (`clientRequest`) never shows.
 /// - Card numbers (``panFields``) show only their last four digits, unless already masked.
-/// - http(s) URLs, in bodies and in the logged `url`, lose their query, fragment and user info.
+/// - The logged `url` and the http(s) URLs in bodies go through `Log.redactedURL(_:)`, the URL
+///   redaction of every other log entry: no user info, query or fragment, the path only on
+///   Payriff's API hosts (long segments shortened) and any other host as `scheme://host[:port]`.
 /// - A body that is not JSON shows as `(<n> bytes, not JSON)`; one whose redacted JSON is longer
 ///   than ``maximumBodyLength`` characters as `(<n> characters of JSON, too long to log)`; and,
 ///   on iOS only, one nested deeper than ``maximumBodyDepth`` levels as
@@ -80,7 +82,7 @@ enum HTTPLog {
     static func describeRequest(method: String, url: String, headers: [String: String], body: Data?) -> String {
         JSONValue.object([
             ("method", .string(method)),
-            ("url", .string(redactedURL(url))),
+            ("url", .string(Log.redactedURL(url))),
             ("headers", redactedHeaders(headers)),
             ("body", redactedBody(body)),
         ]).prettyPrinted
@@ -91,7 +93,7 @@ enum HTTPLog {
         JSONValue.object([
             ("status", .number(String(status))),
             ("method", .string(method)),
-            ("url", .string(redactedURL(url))),
+            ("url", .string(Log.redactedURL(url))),
             ("headers", redactedHeaders(headers)),
             ("body", redactedBody(body)),
         ]).prettyPrinted
@@ -121,8 +123,8 @@ enum HTTPLog {
         return value
     }
 
-    /// A JSON `body` with secrets redacted, card numbers masked and URL queries stripped:
-    /// `null` when empty, and a short description when it is not JSON or too long.
+    /// A JSON `body` with secrets redacted, card numbers masked and URLs redacted: `null` when
+    /// empty, and a short description when it is not JSON or too long.
     static func redactedBody(_ body: Data?) -> JSONValue {
         guard let body, !body.isEmpty else { return .null }
         // Fragments too: a JSON body may be a single string or number.
@@ -137,7 +139,7 @@ enum HTTPLog {
         return length <= maximumBodyLength ? shown : .string("(\(length) characters of JSON, too long to log)")
     }
 
-    /// `value` with secrets redacted, card numbers masked and URL queries stripped. `key` is the
+    /// `value` with secrets redacted, card numbers masked and http(s) URLs redacted. `key` is the
     /// name of the member that holds it; an array passes its own name on to its elements.
     static func redact(_ value: JSONValue, key: String?) -> JSONValue {
         switch value {
@@ -160,7 +162,7 @@ enum HTTPLog {
                 if secretFields.contains(lower) { return .string(redacted(text(of: value))) }
                 if panFields.contains(lower) { return .string(maskedPAN(text(of: value))) }
             }
-            if case .string(let text) = value, isHTTPURL(text) { return .string(redactedURL(text)) }
+            if case .string(let text) = value, isHTTPURL(text) { return .string(Log.redactedURL(text)) }
             return value
         }
     }
@@ -177,30 +179,6 @@ enum HTTPLog {
         let digits = pan.unicodeScalars.filter { ("0"..."9").contains($0) }
         guard digits.count > 4 else { return redacted(pan) }
         return "****" + String(String.UnicodeScalarView(digits.suffix(4)))
-    }
-
-    /// `url` as it may be logged (CONTRACT §11): an http(s) or relative URL without its query,
-    /// fragment and user info (`user:password@`), as ``Log/redactedURL(_:)`` logs it; a URL with
-    /// any other scheme only as `<scheme>:…`.
-    static func redactedURL(_ url: String) -> String {
-        let scalars = url.unicodeScalars
-        // Where the part after the scheme starts.
-        var rest = scalars.startIndex
-        if let colon = scalars.firstIndex(of: ":"), isScheme(scalars[..<colon]) {
-            let scheme = String(scalars[..<colon])
-            let lower = scheme.lowercased()
-            if lower != "http", lower != "https" { return scheme + ":…" }
-            rest = scalars.index(after: colon)
-        }
-        let end = scalars.firstIndex { $0 == "?" || $0 == "#" } ?? scalars.endIndex
-        // The authority follows `//`, after the scheme or at the start of a relative URL, and
-        // ends at the next `/`. Its user info runs up to its last `@`.
-        let head = scalars[rest..<end]
-        guard head.starts(with: "//".unicodeScalars) else { return String(scalars[..<end]) }
-        let authority = head.index(head.startIndex, offsetBy: 2)
-        let authorityEnd = head[authority...].firstIndex(of: "/") ?? head.endIndex
-        guard let at = head[authority..<authorityEnd].lastIndex(of: "@") else { return String(scalars[..<end]) }
-        return String(scalars[..<authority]) + String(scalars[scalars.index(after: at)..<end])
     }
 
     // MARK: - Helpers
@@ -257,17 +235,6 @@ enum HTTPLog {
     private static func isHTTPURL(_ text: String) -> Bool {
         let head = String(text.unicodeScalars.prefix(8)).lowercased()
         return head.hasPrefix("http://") || head.hasPrefix("https://")
-    }
-
-    /// An RFC 3986 scheme: a letter, then letters, digits, `+`, `-` and `.`.
-    private static func isScheme(_ scalars: Substring.UnicodeScalarView) -> Bool {
-        func isLetter(_ scalar: Unicode.Scalar) -> Bool {
-            ("a"..."z").contains(scalar) || ("A"..."Z").contains(scalar)
-        }
-        guard let first = scalars.first, isLetter(first) else { return false }
-        return scalars.dropFirst().allSatisfy {
-            isLetter($0) || ("0"..."9").contains($0) || $0 == "+" || $0 == "-" || $0 == "."
-        }
     }
 }
 

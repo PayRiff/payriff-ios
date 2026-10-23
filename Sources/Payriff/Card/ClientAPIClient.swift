@@ -142,7 +142,7 @@ struct ClientAPIClient: Sendable {
         request.setValue(card.wrappedKey, forHTTPHeaderField: "x-secret-key")
         request.setValue(idempotencyKey, forHTTPHeaderField: "X-Idempotency-Key")
         request.httpBody = Self.payBody(card)
-        return await execute(request, path: path, retryNetworkOnce: true).map { body in
+        return await execute(request, retryNetworkOnce: true).map { body in
             CardNextAction(payload: Self.payload(body))
         }
     }
@@ -206,7 +206,7 @@ struct ClientAPIClient: Sendable {
         guard let request = makeRequest(path: path, method: "GET", timeout: Self.getTimeout) else {
             return .failure(.invalidOrder("orderId does not form a valid URL."))
         }
-        return await execute(request, path: path, retryNetworkOnce: false)
+        return await execute(request, retryNetworkOnce: false)
     }
 
     func makeRequest(path: String, method: String, timeout: TimeInterval) -> URLRequest? {
@@ -223,8 +223,11 @@ struct ClientAPIClient: Sendable {
 
     /// Sends `request`, retrying 429 (and, for `/pay`, one network error) with the same request,
     /// and returns the body of a success envelope.
-    private func execute(_ request: URLRequest, path: String, retryNetworkOnce: Bool) async -> Result<Data, PayriffError> {
+    private func execute(_ request: URLRequest, retryNetworkOnce: Bool) async -> Result<Data, PayriffError> {
         let method = request.httpMethod ?? "GET"
+        // The URL as every log entry shows it (CONTRACT §11): long path segments, such as the
+        // order id, shortened.
+        let url = Log.redactedURL(request.url)
         var rateLimitRetries = 0
         var retriedNetwork = false
         while true {
@@ -244,26 +247,26 @@ struct ClientAPIClient: Sendable {
                 // A refused certificate is not retryable: nothing was sent, and it would be refused again.
                 if mapped.code == .networkError, mapped.isRetryable, retryNetworkOnce, !retriedNetwork, !(error is CancellationError) {
                     retriedNetwork = true
-                    Log.warning("\(method) \(path) failed (\(mapped.code.rawValue)); retrying once in \(Int(Self.payNetworkRetryDelay)) s with the same idempotency key.")
+                    Log.warning("\(method) \(url) failed (\(mapped.code.rawValue)); retrying once in \(Int(Self.payNetworkRetryDelay)) s with the same idempotency key.")
                     guard await sleep(Self.payNetworkRetryDelay) else { return .failure(mapped) }
                     continue
                 }
-                Log.warning("\(method) \(path) failed: \(mapped.code.rawValue)")
+                Log.warning("\(method) \(url) failed: \(mapped.code.rawValue)")
                 return .failure(mapped)
             }
             if status == 429, rateLimitRetries < Self.rateLimitBackoff.count {
                 let delay = Self.rateLimitBackoff[rateLimitRetries]
                 rateLimitRetries += 1
-                Log.warning("\(method) \(path) -> HTTP 429; retry \(rateLimitRetries) of \(Self.rateLimitBackoff.count) in \(Int(delay)) s.")
+                Log.warning("\(method) \(url) -> HTTP 429; retry \(rateLimitRetries) of \(Self.rateLimitBackoff.count) in \(Int(delay)) s.")
                 guard await sleep(delay) else { return .failure(Self.mapError(httpStatus: status, body: body)) }
                 continue
             }
             if (200...299).contains(status), Self.envelopeCode(body) == Self.successCode {
-                Log.debug("\(method) \(path) -> HTTP \(status)")
+                Log.debug("\(method) \(url) -> HTTP \(status)")
                 return .success(body)
             }
             let error = Self.mapError(httpStatus: status, body: body)
-            Log.warning("\(method) \(path) -> HTTP \(status): \(error.code.rawValue)\(error.payriffCode.map { " (\($0))" } ?? "")")
+            Log.warning("\(method) \(url) -> HTTP \(status): \(error.code.rawValue)\(error.payriffCode.map { " (\($0))" } ?? "")")
             return .failure(error)
         }
     }
