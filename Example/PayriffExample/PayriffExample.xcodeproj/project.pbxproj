@@ -11,6 +11,7 @@
 		23BDDED0269D0B21EDD371E2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0160998B190F6FB8C79E360E /* ContentView.swift */; };
 		4F499EBDD5E38CBCC9AAEFED /* PasteOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD91CE3C6CF78800477EDAB7 /* PasteOrderTests.swift */; };
 		57F8D25139CB89C823EE6F02 /* Payriff in Frameworks */ = {isa = PBXBuildFile; productRef = DD00D9C844B3BC78E0484501 /* Payriff */; };
+		A1A1A874F97E8D9AA7870499 /* DocsScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F509AEC81D34FB7850736C31 /* DocsScreenshotTests.swift */; };
 		BE3E3537B8978E8919CAE643 /* ExampleModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859259C9600E35977A2D1B1 /* ExampleModel.swift */; };
 		C05CE977C311248A8239B514 /* ExampleSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDC8C180D6936A40A36FC32 /* ExampleSettings.swift */; };
 		D73531B619FB8D73DE83CB13 /* PayriffExampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEC5EB03FFEFFF4AB415CAD /* PayriffExampleApp.swift */; };
@@ -40,6 +41,7 @@
 		9BF28C7AE34604B11D4F032F /* Secrets.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.example.xcconfig; sourceTree = "<group>"; };
 		DD91CE3C6CF78800477EDAB7 /* PasteOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteOrderTests.swift; sourceTree = "<group>"; };
 		DE302E4AB774CA192C760A66 /* payriff-ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "payriff-ios"; path = ../..; sourceTree = SOURCE_ROOT; };
+		F509AEC81D34FB7850736C31 /* DocsScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocsScreenshotTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +101,7 @@
 		ADAE03E412625F6704C0BAD8 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				F509AEC81D34FB7850736C31 /* DocsScreenshotTests.swift */,
 				DD91CE3C6CF78800477EDAB7 /* PasteOrderTests.swift */,
 				0EF5B23D4B5E9630195D4DA7 /* ThreeDSSheetTests.swift */,
 			);
@@ -209,6 +212,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1A1A874F97E8D9AA7870499 /* DocsScreenshotTests.swift in Sources */,
 				4F499EBDD5E38CBCC9AAEFED /* PasteOrderTests.swift in Sources */,
 				18DC9DF96CBE6BE7480A0A9F /* ThreeDSSheetTests.swift in Sources */,
 			);

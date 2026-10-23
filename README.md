@@ -156,7 +156,7 @@ func handle(_ result: PayriffResult) {
     switch result {
     case .success(let payment): showReceipt(payment)                // still confirm on your server
     case .failed(let error) where error.isFatal: startNewOrder()    // 401, 404 (expired secret), 429
-    case .failed(let error): showError(error.message)               // the order can still be paid
+    case .failed(let error): showError(error.message)               // isRetryable: pay again; see Errors
     case .declined, .cancelled, .pending: reconcileOnServer()
     }
 }

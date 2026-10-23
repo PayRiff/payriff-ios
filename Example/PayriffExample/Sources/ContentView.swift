@@ -107,7 +107,10 @@ private struct PopupContainer<Content: View>: View {
                     }
                     .accessibilityLabel("Close")
                 }
-                .background(Color(red: 0xFC / 255, green: 0xFC / 255, blue: 0xFD / 255))
+                // The payment view's own background, light and dark, so the close strip matches it.
+                .background(Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                    ? UIColor(red: 0x22 / 255, green: 0x22 / 255, blue: 0x24 / 255, alpha: 1)
+                    : UIColor(red: 0xFC / 255, green: 0xFC / 255, blue: 0xFD / 255, alpha: 1) }))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .frame(maxWidth: 440, maxHeight: 640)
                 .padding(16)
