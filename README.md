@@ -65,7 +65,7 @@ Or add it to `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/PayRiff/payriff-ios", from: "1.0.0"),
+    .package(url: "https://github.com/PayRiff/payriff-ios", exact: "1.0.0-rc.1"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -74,7 +74,7 @@ targets: [
 ]
 ```
 
-Until the `1.0.0` tag exists, depend on the `main` branch instead: `.package(url: "https://github.com/PayRiff/payriff-ios", branch: "main")`, or the **Branch** rule with `main` in Xcode.
+`1.0.0-rc.1` is the release candidate of 1.0.0. In Xcode choose the **Exact Version** rule with `1.0.0-rc.1`. After 1.0.0, use `from: "1.0.0"` (the **Up to Next Major Version** rule).
 
 ### CocoaPods (coming soon)
 

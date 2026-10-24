@@ -72,7 +72,7 @@ struct ModelTests {
     @Test("Helpers: version, environment hosts, status parsing and result accessors")
     @MainActor
     func helperNames() {
-        #expect(Payriff.version == "1.0.0")
+        #expect(Payriff.version == "1.0.0-rc.1")
         #expect(PayriffEnvironment.sandbox.apiBaseURL == URL(string: "https://sb-api.payriff.com"))
         #expect(PayriffPaymentStatus(rawStatus: "settled") == .approved)
         let result = PayriffResult.pending(PayriffPayment(orderId: "o1", status: .created), reason: .notFinal)

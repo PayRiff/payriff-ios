@@ -16,7 +16,7 @@ import Foundation
 @MainActor
 public enum Payriff {
     /// The SDK version.
-    public static let version = "1.0.0"
+    public static let version = "1.0.0-rc.1"
 
     /// The configuration set by ``configure(_:)``.
     static private(set) var configuration: PayriffConfig?

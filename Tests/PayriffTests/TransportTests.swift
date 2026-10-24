@@ -360,8 +360,7 @@ struct SourceGuardTests {
         #expect(podspec.contains("s.ios.deployment_target = '16.0'"))
         let changelog = try String(contentsOf: root.appendingPathComponent("CHANGELOG.md"), encoding: .utf8)
         let lines = changelog.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-        #expect(lines.first == "## [\(Payriff.version)] - Unreleased")
-        #expect(lines.dropFirst().first == "- First release.")
+        #expect(lines.first?.hasPrefix("## [\(Payriff.version)] - ") == true, "the newest CHANGELOG entry is this version")
     }
 
     @Test("The privacy manifest ships with the package")

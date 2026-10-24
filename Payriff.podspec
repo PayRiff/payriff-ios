@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name              = 'Payriff'
-  s.version           = '1.0.0'
+  s.version           = '1.0.0-rc.1'
   s.summary           = "Accept card payments with Payriff in a native iOS payment screen."
   s.description       = <<-DESC
     The Payriff iOS SDK pays an order your server created with a ready-made payment screen
