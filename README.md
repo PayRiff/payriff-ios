@@ -22,6 +22,7 @@ Accept card payments with [Payriff](https://payriff.com) in your iOS app. Your s
   - [Card form](#card-form)
   - [Customise the card form](#customise-the-card-form)
 - [Configuration](#configuration)
+  - [Regions](#regions)
 - [Handling `PayriffResult`](#handling-payriffresult)
 - [Fulfil on your server](#fulfil-on-your-server)
 - [Errors](#errors)
@@ -65,7 +66,7 @@ Or add it to `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/PayRiff/payriff-ios", exact: "1.0.0-rc.1"),
+    .package(url: "https://github.com/PayRiff/payriff-ios", exact: "1.0.0-rc.2"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -74,7 +75,7 @@ targets: [
 ]
 ```
 
-`1.0.0-rc.1` is the release candidate of 1.0.0. In Xcode choose the **Exact Version** rule with `1.0.0-rc.1`. After 1.0.0, use `from: "1.0.0"` (the **Up to Next Major Version** rule).
+`1.0.0-rc.2` is the release candidate of 1.0.0. In Xcode choose the **Exact Version** rule with `1.0.0-rc.2`. After 1.0.0, use `from: "1.0.0"` (the **Up to Next Major Version** rule).
 
 ### CocoaPods (coming soon)
 
@@ -93,7 +94,7 @@ Then `import Payriff` wherever you use the SDK.
 
 ## Quick start
 
-**On your server**, create the order with your secret key and return `orderId` and `clientSecret` to the app (never the secret key):
+**On your server**, create the order with your secret key and return `orderId` and `clientSecret` to the app (never the secret key). In region `sa` the host is `api.gccpay.sa` ([Regions](#regions)):
 
 ```http
 POST https://api.payriff.com/api/v3/orders
@@ -427,12 +428,28 @@ Fonts scale with Dynamic Type and rows grow with them. Colours you set are used 
 | `PayriffConfig` property | Type | Default | Description |
 |---|---|---|---|
 | `publishableKey` | `String?` | `nil` | Your publishable key, `pr_pk_live_…`. Trimmed. A key with another prefix (a secret key is always refused) is `INVALID_CONFIG`. |
-| `environment` | `PayriffEnvironment` | `.production` | `.production` (`https://api.payriff.com`) or `.sandbox` (`https://sb-api.payriff.com`, provisional until Payriff confirms the sandbox host). |
+| `environment` | `PayriffEnvironment` | `.production` | `.production` or `.sandbox`. In region `az`: `https://api.payriff.com` or `https://sb-api.payriff.com` (provisional until Payriff confirms the sandbox host). Region `sa` has no sandbox ([Regions](#regions)). |
+| `region` | `PayriffRegion` | `.az` | `.az` (Azerbaijan, `api.payriff.com`) or `.sa` (Saudi Arabia, GCC Pay, `api.gccpay.sa`). See [Regions](#regions). |
 | `language` | `PayriffLanguage?` | `nil` | `.az`, `.en` or `.ru` for the payment view, the card form and the 3-D Secure sheet. `nil` uses the device language (`az*` → AZ, `ru*` → RU, otherwise EN). |
 | `enableLogging` | `Bool` | `false` | Emit log entries (see [Logging](#logging)). |
 | `allowCompromisedDevices` | `Bool` | `false` | `true` lets card payments run on a jailbroken or hooked test device, and the SDK only logs a warning that names what it found. **Debug builds only:** in any other build, such as one for the App Store or TestFlight, the SDK ignores it and logs a warning, and a compromised device is refused as with `false` ([Security](#security)). |
 
-The look is set on the view itself: `PayriffPaymentViewStyle` for the payment view, `PayriffCardFormStyle` for the card form. `print(config)`, `debugPrint(config)` and `dump(config)` show the publishable key only as `pr_pk_live_***(<length>)`.
+The look is set on the view itself: `PayriffPaymentViewStyle` for the payment view, `PayriffCardFormStyle` for the card form. `print(config)`, `debugPrint(config)` and `dump(config)` show the publishable key only as `pr_pk_live_***(<length>)`. `config.apiBaseURL` (read-only) is the API base URL of the configuration's region and environment.
+
+### Regions
+
+`region` and `environment` pick the host of Payriff's API. The SDK calls only that host: every card call, the 3-D Secure callback check, [certificate pinning](#security) and the paths kept in [logs](#logging) follow it.
+
+| `region` | `environment` | API base URL (`config.apiBaseURL`) |
+|---|---|---|
+| `.az` (default) | `.production` | `https://api.payriff.com` |
+| `.az` | `.sandbox` | `https://sb-api.payriff.com` (provisional) |
+| `.sa` | `.production` | `https://api.gccpay.sa` |
+| `.sa` | `.sandbox` | `https://api.gccpay.sa`: **no sandbox** |
+
+> **Warning: region `sa` has no sandbox.** With `region: .sa` and `environment: .sandbox`, card payments go to production (`https://api.gccpay.sa`) and **charge real cards**. `configure` then logs the warning `Region sa has no sandbox: card payments go to production (https://api.gccpay.sa) and charge real cards.` (turn on `enableLogging` to see it). Test region `sa` only with real orders you mean to pay.
+
+For Saudi Arabia, configure `PayriffConfig(publishableKey: "pr_pk_live_…", region: .sa)`. Your server creates the orders on the same host, `https://api.gccpay.sa` (`POST /api/v3/orders`), because the SDK looks the order up there. The publishable key rule, the client secret, the endpoints, 3-D Secure and the results are the same in both regions.
 
 ## Handling `PayriffResult`
 
@@ -508,12 +525,12 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
 
 - Logs never contain card data, the client secret, the publishable key, the encrypted card, `x-secret-key` or 3-D Secure form values.
 - They do contain order ids, statuses, amounts and the paths of Payriff's API URLs. Keep them in your own diagnostics and do not forward `onLog` to third-party analytics or crash reporters.
-- URLs never show a user name, password, query or fragment. Only URLs of Payriff's API (`api.payriff.com`, `sb-api.payriff.com`) show their path, and a path segment of 16 or more characters only as its first and last 4 characters (`https://api.payriff.com/api/v3/client/orders/7c9e…0ae7/pay`). Any other host, such as a bank's 3-D Secure page, shows as `https://host[:port]` only, and other schemes only as `<scheme>:…`. The same rule applies to the request and response details below and to the URLs in their bodies.
+- URLs never show a user name, password, query or fragment. Only URLs of Payriff's API hosts (`api.payriff.com`, `sb-api.payriff.com` and `api.gccpay.sa`) show their path, and a path segment of 16 or more characters only as its first and last 4 characters (`https://api.payriff.com/api/v3/client/orders/7c9e…0ae7/pay`). Any other host, such as a bank's 3-D Secure page, shows as `https://host[:port]` only, and other schemes only as `<scheme>:…`. The same rule applies to the request and response details below and to the URLs in their bodies.
 - Debug builds also log every API request and response at `debug` level as pretty-printed JSON (`HTTP request` / `HTTP response`: method, URL, headers and body), with every secret shown only as `***(<length>)`. Release builds never log them.
 
 ## Security
 
-- **Certificate pinning.** Every Client API call of the SDK (the order, pay, the 3-D Secure step and the status) to `api.payriff.com` and `sb-api.payriff.com` is pinned. The connection is accepted only when iOS trusts the certificate chain for the host (chain, expiry, host name) and a key of that chain is one of Payriff's pinned CA keys: the current Sectigo intermediate and roots, and backup roots of other major CAs. They are CA keys, not the server's own key, so Payriff's yearly certificate renewal keeps working. A certificate that fails, for example from a proxy such as Charles or Proxyman, fails the call with `NETWORK_ERROR` (`isRetryable` is `false`, "Payriff's server certificate could not be verified."), and nothing is sent. No setting turns pinning off, in any build. Debug builds log every request and response ([Logging](#logging)), so you do not need a proxy to see the traffic.
+- **Certificate pinning.** Every Client API call of the SDK (the order, pay, the 3-D Secure step and the status) to `api.payriff.com`, `sb-api.payriff.com` and `api.gccpay.sa` is pinned. The connection is accepted only when iOS trusts the certificate chain for the host (chain, expiry, host name) and a key of that chain is one of Payriff's pinned CA keys: the current Sectigo intermediate and roots of `*.payriff.com`, Google Trust Services' GTS Root R1 and R4 for `*.gccpay.sa`, and backup roots of other major CAs. They are CA keys, not the server's own key, so certificate renewals keep working. A certificate that fails, for example from a proxy such as Charles or Proxyman, fails the call with `NETWORK_ERROR` (`isRetryable` is `false`, "Payriff's server certificate could not be verified."), and nothing is sent. No setting turns pinning off, in any build. Debug builds log every request and response ([Logging](#logging)), so you do not need a proxy to see the traffic.
 - **Not pinned: the 3-D Secure pages.** They are the banks' own pages, so they load in the SDK's sheet with iOS's usual certificate checks.
 - **Device integrity.** Card payments are refused on a jailbroken device and when a hooking tool is loaded or running (Substrate, libhooker, ElleKit, Frida and the like). In App Store and TestFlight builds an attached debugger and `DYLD_INSERT_LIBRARIES` count too; Xcode uses both when it runs your app, so development is not blocked. The SDK checks when the payment view appears, when `confirmCardPayment` starts and right before the card is encrypted. `confirmCardPayment` then returns `.failed` with `DEVICE_COMPROMISED` and nothing is sent; the payment view says "Card payments aren't available on this device for security reasons", keeps Pay disabled, does not read the order and passes `DEVICE_COMPROMISED` to `onResult` once. `Payriff.retrieveOrder` is never blocked. `Payriff.isDeviceCompromised` lets you decide early, for example to offer another payment method. Nothing is checked on the simulator or on a Mac. The checks run on the device and stop the common tools; a determined attacker can get past them.
 - **Opting out for development.** On a jailbroken test device, set `allowCompromisedDevices`. The SDK then only logs a warning that names what it found, such as `jailbreak files` or `Frida` (turn on `enableLogging` to see it). It works only in debug builds, when the SDK is compiled with the `DEBUG` condition, which follows your app's build configuration with Swift Package Manager and CocoaPods. In any other build, such as a Release build for the App Store or TestFlight, the SDK ignores it: a compromised device is refused as with `false`, and a warning says `allowCompromisedDevices is ignored outside debug builds`. So a setting left on can never reach your customers. Still keep it behind `#if DEBUG`:
@@ -547,6 +564,7 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
 
 - **No payment UI on macOS.** The macOS target exists only for `swift test` of the UI-free core.
 - **Sandbox host.** `https://sb-api.payriff.com` is provisional until Payriff confirms the sandbox host.
+- **No Saudi sandbox.** Region `sa` has no sandbox: `environment: .sandbox` pays on `https://api.gccpay.sa`, in production, and charges real cards ([Regions](#regions)).
 - **Process death.** If iOS terminates the app during a payment, the pending `confirmCardPayment` call is gone; reconcile the order on your server.
 
 ## Example app
@@ -559,7 +577,7 @@ Each `PayriffLogEntry` has a `level` (`debug`, `info`, `warning`, `error`), a `m
    cp Example/Config/Secrets.example.xcconfig Example/Config/Secrets.xcconfig
    ```
 
-   `Secrets.xcconfig` is git-ignored and only **Debug** builds read it. Its values reach the app through Info.plist. Payriff only accepts apps it knows: ask Payriff to allow the bundle id `com.payriff.example.ios` for your publishable key.
+   `Secrets.xcconfig` is git-ignored and only **Debug** builds read it. Its values reach the app through Info.plist. Besides `PAYRIFF_PUBLISHABLE_KEY` it may set `PAYRIFF_ENVIRONMENT` (`sandbox` or `production`) and `PAYRIFF_REGION` (`az` or `sa`); without them the app uses `sandbox` and `az` from `Example/Config/Example.xcconfig`. Region `sa` has no sandbox: its payments go to production and charge real cards. Payriff only accepts apps it knows: ask Payriff to allow the bundle id `com.payriff.example.ios` for your publishable key.
 
 2. Create an order on your server ([Quick start](#quick-start)) and copy its `orderId` and `clientSecret`.
 
@@ -580,8 +598,8 @@ Debug builds also write the SDK log to `Documents/payriff-sdk.log` in the app's 
 | `.failed` with `NOT_CONFIGURED` | Call `Payriff.configure` first. |
 | `INVALID_CONFIG` | Set `publishableKey` to your `pr_pk_live_…` key; a secret key is never accepted. |
 | `INVALID_ORDER` | Pass the order id and the `pr_cs_…` client secret your server received. |
-| `UNAUTHORIZED` | The publishable key is wrong or revoked, or the app is not allowed for it, or it belongs to the other environment. |
-| `SESSION_EXPIRED` | The order does not exist in this environment, or its client secret expired: create a new order. |
+| `UNAUTHORIZED` | The publishable key is wrong or revoked, or the app is not allowed for it, or it belongs to the other environment or region. |
+| `SESSION_EXPIRED` | The order does not exist in this environment or region, or its client secret expired: create a new order. |
 | `ORDER_NOT_PAYABLE` | The order was already paid, cancelled or expired, or does not accept cards. |
 | `NETWORK_ERROR`: "Payriff's server certificate could not be verified." | A proxy (Charles, Proxyman, mitmproxy) or a network that intercepts TLS sits between the app and Payriff, or the device's date is wrong. The SDK's connections are pinned: turn the proxy off. Debug builds log the traffic ([Logging](#logging)). |
 | `DEVICE_COMPROMISED` on a test device | The device is jailbroken, a hooking tool such as Frida runs, or a debugger is attached to an App Store or TestFlight build. Turn on `enableLogging` to see which signal matched. For development, set `allowCompromisedDevices` and run a debug build ([Security](#security)). |

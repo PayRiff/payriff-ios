@@ -1,5 +1,5 @@
 {
-  "description": "3-D Secure WebView navigation for the native card flow (backend mobile spec §7, CONTRACT.md §16.8). Each case replays main-frame / subframe navigations in order; state carries over between steps of one case. Actions: allow (load it), allowCallback (it is Payriff's bank callback: load it, never cancel it, and arm the flow), finish (cancel this navigation, close the WebView, resolve the status), external (hand to the OS, keep the WebView), block (cancel silently). A gateway callback is an https main-frame URL whose host equals the API host of the configured environment (case-insensitive) and whose path starts with /api/v3/gateway/ and contains a /callback segment. After a callback has been loaded, the next main-frame navigation that is neither another callback nor about:blank is 'finish'. Main-frame URLs other than https (except about:blank and external app schemes) are 'block'.",
+  "description": "3-D Secure WebView navigation for the native card flow (backend mobile spec §7, CONTRACT.md §16.8). Each case replays main-frame / subframe navigations in order; state carries over between steps of one case. Actions: allow (load it), allowCallback (it is Payriff's bank callback: load it, never cancel it, and arm the flow), finish (cancel this navigation, close the WebView, resolve the status), external (hand to the OS, keep the WebView), block (cancel silently). A gateway callback is an https main-frame URL whose host equals the host of PayriffConfig.apiBaseUrl, which follows the configured region and environment (case-insensitive) and whose path starts with /api/v3/gateway/ and contains a /callback segment. After a callback has been loaded, the next main-frame navigation that is neither another callback nor about:blank is 'finish'. Main-frame URLs other than https (except about:blank and external app schemes) are 'block'.",
   "cases": [
     {
       "name": "Kapital challenge: callback loads, the next page ends the flow",
@@ -242,6 +242,43 @@
           "url": "https://merchant.example/",
           "isMainFrame": true,
           "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "region sa: the callback is on api.gccpay.sa",
+      "apiBase": "https://api.gccpay.sa",
+      "steps": [
+        {
+          "url": "https://acs.bank.example/challenge",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://api.gccpay.sa/api/v3/gateway/bank/callback/ORD-1",
+          "isMainFrame": true,
+          "expected": "allowCallback"
+        },
+        {
+          "url": "https://merchant.example/return",
+          "isMainFrame": true,
+          "expected": "finish"
+        }
+      ]
+    },
+    {
+      "name": "region sa: a callback on api.payriff.com is not this region's callback",
+      "apiBase": "https://api.gccpay.sa",
+      "steps": [
+        {
+          "url": "https://api.payriff.com/api/v3/gateway/bank/callback/ORD-1",
+          "isMainFrame": true,
+          "expected": "allow"
+        },
+        {
+          "url": "https://merchant.example/",
+          "isMainFrame": true,
+          "expected": "allow"
         }
       ]
     }

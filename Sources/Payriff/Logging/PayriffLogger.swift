@@ -66,9 +66,9 @@ public struct PayriffLogEntry: Sendable, Hashable {
 /// to third-party analytics.
 ///
 /// URLs never show their user info, query or fragment. Only Payriff's API hosts
-/// (`api.payriff.com`, `sb-api.payriff.com`) show the path, with every segment of 16 or more
-/// characters shortened to its first and last 4 (`/api/v3/client/orders/7c9e…0ae7/pay`); any
-/// other host, such as a bank's 3-D Secure page, shows as `https://host[:port]` only, and other
+/// (`api.payriff.com`, `sb-api.payriff.com`, `api.gccpay.sa`) show the path, with every segment of
+/// 16 or more characters shortened to its first and last 4 (`/api/v3/client/orders/7c9e…0ae7/pay`);
+/// any other host, such as a bank's 3-D Secure page, shows as `https://host[:port]` only, and other
 /// schemes only as `<scheme>:…`.
 ///
 /// In debug builds, `debug` entries also show every API request and response as pretty-printed
@@ -139,9 +139,9 @@ enum Log {
     static func warning(_ message: @autoclosure () -> String) { PayriffLogger.log(.warning, message()) }
     static func error(_ message: @autoclosure () -> String) { PayriffLogger.log(.error, message()) }
 
-    /// The hosts whose URL paths may be logged: Payriff's API hosts, `api.payriff.com` and
-    /// `sb-api.payriff.com` (CONTRACT §11, the host table of §16.2), lower-cased.
-    static let apiHosts: Set<String> = Set(PayriffEnvironment.allCases.map(ClientAPIHost.host(for:)))
+    /// The hosts whose URL paths may be logged: Payriff's API hosts, `api.payriff.com`,
+    /// `sb-api.payriff.com` and `api.gccpay.sa` (CONTRACT §11, the host table of §16.2), lower-cased.
+    static let apiHosts: Set<String> = ClientAPIHost.allHosts
 
     /// A path segment of this many characters or more is logged as its first and last
     /// ``shortenedSegmentEnds`` characters.

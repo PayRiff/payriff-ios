@@ -69,11 +69,12 @@ struct ModelTests {
         return String(decoding: try encoder.encode(value), as: UTF8.self)
     }
 
-    @Test("Helpers: version, environment hosts, status parsing and result accessors")
+    @Test("Helpers: version, API base URL, status parsing and result accessors")
     @MainActor
     func helperNames() {
-        #expect(Payriff.version == "1.0.0-rc.1")
-        #expect(PayriffEnvironment.sandbox.apiBaseURL == URL(string: "https://sb-api.payriff.com"))
+        #expect(Payriff.version == "1.0.0-rc.2")
+        #expect(PayriffConfig(environment: .sandbox).apiBaseURL == URL(string: "https://sb-api.payriff.com"))
+        #expect(PayriffConfig(region: .sa).apiBaseURL == URL(string: "https://api.gccpay.sa"))
         #expect(PayriffPaymentStatus(rawStatus: "settled") == .approved)
         let result = PayriffResult.pending(PayriffPayment(orderId: "o1", status: .created), reason: .notFinal)
         #expect(!result.isSuccess && result.payment?.orderId == "o1" && result.error == nil)

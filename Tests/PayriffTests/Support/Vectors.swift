@@ -128,7 +128,7 @@ enum Vectors {
         "strings": ["description", "strings"],
         // The native card flow (CONTRACT §16), asserted by CardVectorTests.
         "card_3ds_navigation": ["description", "cases"],
-        "card_api": ["description", "order", "errors", "status", "requests", "keys", "clientSecrets"],
+        "card_api": ["description", "order", "errors", "status", "requests", "keys", "clientSecrets", "hosts"],
         "card_crypto": [
             "description", "testPublicKeySpki", "testPrivateKeyPkcs8", "aesKey", "iv", "keyIv",
             "rsaWrappedKeyIv", "aesGcm", "payriffPublicKeySpki", "payriffPublicKeySha256",
@@ -141,7 +141,7 @@ enum Vectors {
             "expiry", "cvv", "holder", "visibleError", "luhn",
         ],
         // Certificate pinning (CONTRACT §16.15), asserted by CertificatePinningTests.
-        "tls_pins": ["description", "hosts", "pins", "trustAnchors", "currentChain", "interceptedChain"],
+        "tls_pins": ["description", "hosts", "pins", "trustAnchors", "currentChain", "gccpayChain", "interceptedChain"],
     ]
 
     /// Vector files that no code in this package implements yet. Their sections are pinned here

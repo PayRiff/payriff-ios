@@ -52,6 +52,23 @@ struct GlobalStateTests {
         #expect(transport.requests.isEmpty, "nothing is sent with an invalid configuration")
     }
 
+    @Test("configure logs card_api.json's hosts warning once per call (region sa has no sandbox), only with enableLogging", arguments: CardVectors.hostCases)
+    func regionWarning(_ vector: CardAPIVectors.HostCase) throws {
+        let recorder = LogRecorder()
+        recorder.install()
+        defer { PayriffLogger.onLog = nil }
+        let region = try #require(PayriffRegion(rawValue: vector.region))
+        let environment = try #require(PayriffEnvironment(rawValue: vector.environment))
+        let config = PayriffConfig(publishableKey: Self.publishableKey, environment: environment, region: region, enableLogging: true)
+        Payriff.configure(config)
+        #expect(recorder.all.filter { $0.level == .warning }.map(\.message) == (vector.warning.map { [$0] } ?? []))
+        Payriff.configure(config)
+        #expect(recorder.all.filter { $0.level == .warning }.count == (vector.warning == nil ? 0 : 2), "one warning per configure call")
+        recorder.clear()
+        Payriff.configure(PayriffConfig(publishableKey: Self.publishableKey, environment: environment, region: region))
+        #expect(recorder.all.isEmpty, "no entry without enableLogging")
+    }
+
     // MARK: Logging (CONTRACT §11)
 
     @Test("Logging is off by default and on with enableLogging")
@@ -74,10 +91,12 @@ struct GlobalStateTests {
         let recorder = LogRecorder()
         recorder.install()
         Payriff.configure(PayriffConfig(publishableKey: Self.publishableKey, environment: .sandbox, language: .ru, enableLogging: true))
-        #expect(recorder.contains("Configured Payriff \(Payriff.version): environment=sandbox publishableKey=set language=RU"))
+        #expect(recorder.contains("Configured Payriff \(Payriff.version): environment=sandbox region=az publishableKey=set language=RU"))
         #expect(!recorder.all.contains { $0.message.contains(Self.publishableKey) })
         Payriff.configure(PayriffConfig(enableLogging: true))
-        #expect(recorder.contains("environment=production publishableKey=none language=device"))
+        #expect(recorder.contains("environment=production region=az publishableKey=none language=device"))
+        Payriff.configure(PayriffConfig(region: .sa, enableLogging: true))
+        #expect(recorder.contains("environment=production region=sa publishableKey=none language=device"))
         #expect(Log.redactedURL(URL(string: "https://user:pass@acs.bank.example/challenge?id=1#x")) == "https://acs.bank.example")
         PayriffLogger.onLog = nil
     }

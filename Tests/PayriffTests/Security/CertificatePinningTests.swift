@@ -15,11 +15,11 @@ struct CertificatePinningTests {
         try chain.pems.map { try #require(TLSPinVectors.der($0)) }
     }
 
-    /// Every certificate of the vector: the trust anchors and both chains.
+    /// Every certificate of the vector: the trust anchors and the three chains.
     private static func allCertificates() throws -> [Data] {
         let vectors = try vectors()
         return try vectors.trustAnchors.map { try #require(TLSPinVectors.der($0.pem), "\($0.name)") }
-            + ders(vectors.currentChain) + ders(vectors.interceptedChain)
+            + ders(vectors.currentChain) + ders(vectors.gccpayChain) + ders(vectors.interceptedChain)
     }
 
     @Test("tls_pins.json decodes completely")
@@ -30,8 +30,9 @@ struct CertificatePinningTests {
             #expect(count > 0 && count == raw, "tls_pins.json \(key)")
         }
         #expect(vectors.currentChain.pems.count == 4)
+        #expect(vectors.gccpayChain.pems.count == 3)
         #expect(vectors.interceptedChain.pems.count == 2)
-        #expect(try Self.allCertificates().count == vectors.trustAnchors.count + 6, "every PEM decodes")
+        #expect(try Self.allCertificates().count == vectors.trustAnchors.count + 9, "every PEM decodes")
     }
 
     @Test("The pinned hosts and pins equal tls_pins.json, and every trust anchor's key is the pin of the same name")
@@ -41,9 +42,13 @@ struct CertificatePinningTests {
         #expect(CertificatePinning.hosts.count == vectors.hosts.count)
         #expect(CertificatePinning.pins == Set(vectors.pins.map(\.spkiSha256)))
         #expect(CertificatePinning.pins.count == vectors.pins.count, "no pin twice")
-        for environment in PayriffEnvironment.allCases {
-            #expect(CertificatePinning.isPinned(host: ClientAPIHost.host(for: environment)), "\(environment) is pinned")
+        // Every host of the region and environment table is pinned, and nothing else.
+        for region in PayriffRegion.allCases {
+            for environment in PayriffEnvironment.allCases {
+                #expect(CertificatePinning.isPinned(host: ClientAPIHost.host(region: region, environment: environment)), "\(region) \(environment) is pinned")
+            }
         }
+        #expect(CertificatePinning.hosts == ClientAPIHost.allHosts)
         // The anchors (for SDKs that pin by trust anchor) are the pinned roots: the same CAs.
         let pinsByName = Dictionary(uniqueKeysWithValues: vectors.pins.map { ($0.name, $0.spkiSha256) })
         for anchor in vectors.trustAnchors {
@@ -58,7 +63,12 @@ struct CertificatePinningTests {
     func pinnedHosts() {
         #expect(CertificatePinning.isPinned(host: "api.payriff.com"))
         #expect(CertificatePinning.isPinned(host: "SB-API.Payriff.com"))
-        for host in ["pay.payriff.com", "payriff.com", "acs.bank.example", "api.payriff.com.attacker.example", "xapi.payriff.com"] {
+        #expect(CertificatePinning.isPinned(host: "api.gccpay.sa"))
+        #expect(CertificatePinning.isPinned(host: "API.GccPay.SA"))
+        for host in [
+            "pay.payriff.com", "payriff.com", "acs.bank.example", "api.payriff.com.attacker.example", "xapi.payriff.com",
+            "pay.gccpay.sa", "gccpay.sa", "api.gccpay.sa.attacker.example", "xapi.gccpay.sa", "sb-api.gccpay.sa",
+        ] {
             #expect(!CertificatePinning.isPinned(host: host), "\(host)")
         }
     }
@@ -74,6 +84,11 @@ struct CertificatePinningTests {
             "a9khLOZJxlnJyrxstg/P+seiDCm+Yf3OsrXyFocBaI0=", // Sectigo DV R36
             "Douxi77vs4G+Ib/BogbTFymEYq0QSFXwSgVCaZcI09Q=", // Sectigo Root R46, cross-signed
             "x4QzPSC810K5/cMjb05Qm4k3Bw5zBn4lTdO/nEW/Td4=", // USERTrust RSA
+        ])
+        // The leaf of api.gccpay.sa is renewed every few months, so only its CAs are compared.
+        #expect(try Self.ders(vectors.gccpayChain).dropFirst().map(CertificatePinning.spkiSHA256(certificate:)) == [
+            "OdSlmQD9NWJh4EbcOHBxkhygPwNSwA9Q91eounfbcoE=", // Google Trust Services WR3 (not pinned)
+            "hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=", // GTS Root R1, cross-signed by GlobalSign Root CA
         ])
         #expect(try Self.ders(vectors.interceptedChain).map(CertificatePinning.spkiSHA256(certificate:)) == [
             "mP72qr5bFFrqd6/QtrZKtA8BAFgOwrK7nUVNRfmnSZE=", // the proxy's api.payriff.com
@@ -153,6 +168,21 @@ struct CertificatePinningTests {
         #expect(!CertificatePinning.containsPinnedKey(current, pins: []))
     }
 
+    @Test("The pin check accepts the chain api.gccpay.sa serves (region sa) through its pinned GTS Root R1")
+    func gccpayPinCheck() throws {
+        let vectors = try Self.vectors()
+        let gccpay = try Self.ders(vectors.gccpayChain)
+        #expect(CertificatePinning.containsPinnedKey(gccpay))
+        // The pinned key is the root's: the leaf and WR3 alone are not enough, the root with the leaf is.
+        let root = try #require(vectors.pins.first { $0.name == "GTS Root R1" })
+        #expect(CertificatePinning.spkiSHA256(certificate: gccpay[2]) == root.spkiSha256)
+        #expect(!CertificatePinning.containsPinnedKey(Array(gccpay.prefix(2))))
+        #expect(CertificatePinning.containsPinnedKey([gccpay[0], gccpay[2]]))
+        #expect(!CertificatePinning.containsPinnedKey(gccpay, pins: []))
+        // An interception proxy's chain stays refused whichever host it was issued for.
+        #expect(!CertificatePinning.containsPinnedKey(try Self.ders(vectors.interceptedChain)))
+    }
+
     // MARK: The trust evaluation
 
     /// A trust for `chain` that trusts only `anchors`, at a fixed date inside the validity of both
@@ -213,6 +243,8 @@ struct CertificatePinningTests {
         }
         #expect(isRefused(CertificatePinning.decide(Self.challenge(host: "api.payriff.com", method: NSURLAuthenticationMethodServerTrust))))
         #expect(isRefused(CertificatePinning.decide(Self.challenge(host: "sb-api.payriff.com", method: NSURLAuthenticationMethodServerTrust))))
+        #expect(isRefused(CertificatePinning.decide(Self.challenge(host: "api.gccpay.sa", method: NSURLAuthenticationMethodServerTrust))))
+        #expect(isDefault(CertificatePinning.decide(Self.challenge(host: "pay.gccpay.sa", method: NSURLAuthenticationMethodServerTrust))))
         #expect(isDefault(CertificatePinning.decide(Self.challenge(host: "acs.bank.example", method: NSURLAuthenticationMethodServerTrust))))
         #expect(isDefault(CertificatePinning.decide(Self.challenge(host: "api.payriff.com", method: NSURLAuthenticationMethodHTTPBasic))))
         #expect(isDefault(CertificatePinning.decide(Self.challenge(host: "api.payriff.com", method: NSURLAuthenticationMethodClientCertificate))))

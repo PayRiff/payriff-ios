@@ -9,13 +9,14 @@ import Security
 /// its SubjectPublicKeyInfo SHA-256 in ``pins``. Every Client API call (order, pay, three-ds,
 /// status) goes through ``URLSessionTransport``, whose task delegate applies this.
 ///
-/// The pins are CA keys, not the leaf: the current Sectigo intermediate and roots, and backup roots
-/// of other major CAs, so the yearly certificate renewal keeps working. No setting turns pinning
+/// The pins are CA keys, not the leaf: the current Sectigo intermediate and roots of
+/// `*.payriff.com`, Google Trust Services' roots of `*.gccpay.sa`, and backup roots of other major
+/// CAs, so the certificate renewals keep working. No setting turns pinning
 /// off. The 3-D Secure web views are not pinned: they load the banks' pages. A test transport
 /// (`Payriff.services.transport`) replaces the whole transport, so tests are not affected.
 enum CertificatePinning {
-    /// The hosts whose connections are pinned: the Client API hosts of CONTRACT §16.2.
-    static let hosts: Set<String> = ["api.payriff.com", "sb-api.payriff.com"]
+    /// The hosts whose connections are pinned: the Client API hosts of CONTRACT §16.2, every region.
+    static let hosts: Set<String> = ["api.payriff.com", "sb-api.payriff.com", "api.gccpay.sa"]
 
     /// The SHA-256 (base64) of the SubjectPublicKeyInfo of every pinned CA key; a test checks that
     /// they equal `tls_pins.json`.
@@ -31,9 +32,10 @@ enum CertificatePinning {
         "NqvDJlas/GRcYbcWE8S/IceH9cq77kg0jVhZeAPXq8k=", // Amazon Root CA 3
         "i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=", // DigiCert Global Root G2
         "r/mIkG3eEpVdm+u/ko/cwxzOMo1bk4TyHIlByibiA5E=", // DigiCert Global Root CA
-        "hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=", // GTS Root R1
+        "hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=", // GTS Root R1 (current root of api.gccpay.sa)
         "cGuxAXyFXFkWm61cF4HPWX8S0srS9j0aSqN0k4AP+4A=", // GlobalSign Root CA - R3
         "rn+WLLnmp9v3uDP7GPqbcaiRdd+UnCMrap73yz3yu/w=", // GlobalSign Root R46
+        "mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=", // GTS Root R4 (Google's ECDSA chains)
     ]
 
     /// The message of the `NETWORK_ERROR` a refused certificate becomes (CONTRACT §16.15).

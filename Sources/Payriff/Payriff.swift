@@ -16,7 +16,7 @@ import Foundation
 @MainActor
 public enum Payriff {
     /// The SDK version.
-    public static let version = "1.0.0-rc.1"
+    public static let version = "1.0.0-rc.2"
 
     /// The configuration set by ``configure(_:)``.
     static private(set) var configuration: PayriffConfig?
@@ -69,15 +69,20 @@ public enum Payriff {
     /// (`Invalid configuration: …`), and every later call fails with `INVALID_CONFIG`:
     /// ``confirmCardPayment(_:orderId:clientSecret:from:)`` returns ``PayriffResult/failed(_:)``
     /// and ``retrieveOrder(orderId:clientSecret:)`` throws. Outside debug builds,
-    /// ``PayriffConfig/allowCompromisedDevices`` is ignored, and a warning says so.
+    /// ``PayriffConfig/allowCompromisedDevices`` is ignored, and a warning says so. Region
+    /// ``PayriffRegion/sa`` with ``PayriffEnvironment/sandbox`` logs a warning that payments go to
+    /// production, because there is no Saudi sandbox.
     ///
     /// - Parameter config: The configuration.
     public static func configure(_ config: PayriffConfig) {
         configuration = config
         PayriffLogger.isEnabled = config.enableLogging
-        Log.info("Configured Payriff \(version): environment=\(config.environment.rawValue) publishableKey=\(ResponseParser.nonBlank(config.publishableKey) == nil ? "none" : "set") language=\(config.language?.rawValue ?? "device")")
+        Log.info("Configured Payriff \(version): environment=\(config.environment.rawValue) region=\(config.region.rawValue) publishableKey=\(ResponseParser.nonBlank(config.publishableKey) == nil ? "none" : "set") language=\(config.language?.rawValue ?? "device")")
         if case .failure(let problem) = ClientCredentials.publishableKey(config.publishableKey) {
             Log.warning("Invalid configuration: \(problem.message)")
+        }
+        if let warning = ClientAPIHost.sandboxWarning(region: config.region, environment: config.environment) {
+            Log.warning(warning)
         }
         if config.allowCompromisedDevices, !services.isDebugBuild {
             Log.warning(DeviceIntegrityPolicy.ignoredOptOutWarning)

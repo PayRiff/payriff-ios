@@ -174,12 +174,26 @@ struct CardAPIVectors: Decodable, Sendable {
         var description: String { name }
     }
 
+    struct HostCase: Decodable, Sendable, CustomStringConvertible {
+        let region: String
+        let environment: String
+        let apiBaseUrl: String
+        let warning: String?
+        var description: String { "\(region) \(environment)" }
+    }
+
+    struct Hosts: Decodable, Sendable {
+        let defaultRegion: String
+        let cases: [HostCase]
+    }
+
     let order: [ResponseCase]
     let errors: [ResponseCase]
     let status: [ResponseCase]
     let requests: [RequestCase]
     let keys: [KeyCase]
     let clientSecrets: [KeyCase]
+    let hosts: Hosts
 }
 
 enum CardVectors {
@@ -217,6 +231,7 @@ enum CardVectors {
     static var requestCases: [CardAPIVectors.RequestCase] { api?.requests ?? [] }
     static var keyCases: [CardAPIVectors.KeyCase] { api?.keys ?? [] }
     static var clientSecretCases: [CardAPIVectors.KeyCase] { api?.clientSecrets ?? [] }
+    static var hostCases: [CardAPIVectors.HostCase] { api?.hosts.cases ?? [] }
 }
 
 extension PayriffCardFieldError {

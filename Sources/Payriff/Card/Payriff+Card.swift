@@ -61,7 +61,7 @@ extension Payriff {
         case .success(let value): id = value
         }
         let client = ClientAPIClient(
-            baseURL: ClientAPIHost.baseURL(for: config.environment),
+            baseURL: ClientAPIHost.baseURL(region: config.region, environment: config.environment),
             credentials: ClientCredentials(publishableKey: publishableKey, clientSecret: secret),
             appId: ClientAppID.validated(services.clientAppId()),
             transport: services.transport,
@@ -71,7 +71,7 @@ extension Payriff {
         return .success(CardContext(
             orderId: id,
             client: client,
-            apiHost: ClientAPIHost.host(for: config.environment)
+            apiHost: ClientAPIHost.host(region: config.region, environment: config.environment)
         ))
     }
 

@@ -1,21 +1,40 @@
 import Foundation
 
-/// The Client API host of each environment (CONTRACT §16.2).
+/// The Client API host of each region and environment (CONTRACT §16.2, `card_api.json` → `hosts`).
+/// The SDK's one place that turns a region and an environment into a host: the card calls, the
+/// 3-D Secure callback check, the pinned hosts and the logged paths all follow it.
 enum ClientAPIHost {
     static let production = "https://api.payriff.com"
     /// Provisional: the backend will confirm the sandbox host (CONTRACT §16.13). Keep it this one constant.
     static let sandbox = "https://sb-api.payriff.com"
+    /// Saudi Arabia (GCC Pay). There is no Saudi sandbox (owner decision 2026-10-27): its sandbox
+    /// is this production host.
+    static let gccPay = "https://api.gccpay.sa"
 
-    static func baseURL(for environment: PayriffEnvironment) -> String {
-        switch environment {
-        case .production: return production
-        case .sandbox: return sandbox
+    static func baseURL(region: PayriffRegion, environment: PayriffEnvironment) -> String {
+        switch (region, environment) {
+        case (.az, .production): return production
+        case (.az, .sandbox): return sandbox
+        case (.sa, _): return gccPay
         }
     }
 
-    /// The lower-cased host of `baseURL(for:)`, used to recognize gateway callbacks.
-    static func host(for environment: PayriffEnvironment) -> String {
-        URLComponents(string: baseURL(for: environment))?.host?.lowercased() ?? ""
+    /// The lower-cased host of `baseURL(region:environment:)`, used to recognize gateway callbacks.
+    static func host(region: PayriffRegion, environment: PayriffEnvironment) -> String {
+        URLComponents(string: baseURL(region: region, environment: environment))?.host?.lowercased() ?? ""
+    }
+
+    /// Every Client API host of the table, lower-cased.
+    static let allHosts: Set<String> = Set(PayriffRegion.allCases.flatMap { region in
+        PayriffEnvironment.allCases.map { host(region: region, environment: $0) }
+    })
+
+    /// The warning `configure` logs for a sandbox that is the region's production host, or `nil`
+    /// (CONTRACT §16.2: region `sa` has no sandbox).
+    static func sandboxWarning(region: PayriffRegion, environment: PayriffEnvironment) -> String? {
+        let url = baseURL(region: region, environment: environment)
+        guard environment == .sandbox, url == baseURL(region: region, environment: .production) else { return nil }
+        return "Region \(region.rawValue) has no sandbox: card payments go to production (\(url)) and charge real cards."
     }
 }
 

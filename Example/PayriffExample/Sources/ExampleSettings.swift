@@ -5,6 +5,8 @@ import Payriff
 /// `Example/Config/Secrets.xcconfig`. There is no secret key: orders come from your server.
 struct ExampleSettings: Equatable {
     var environment: PayriffEnvironment
+    /// `az` (`api.payriff.com`) or `sa` (`api.gccpay.sa`, which has no sandbox).
+    var region: PayriffRegion
     /// The publishable key (`pr_pk_live_…`).
     var publishableKey: String
 
@@ -15,6 +17,7 @@ struct ExampleSettings: Equatable {
         }
         return ExampleSettings(
             environment: PayriffEnvironment(rawValue: value("PayriffEnvironment").lowercased()) ?? .sandbox,
+            region: PayriffRegion(rawValue: value("PayriffRegion").lowercased()) ?? .az,
             publishableKey: value("PayriffPublishableKey")
         )
     }
@@ -27,6 +30,7 @@ struct ExampleSettings: Equatable {
         PayriffConfig(
             publishableKey: hasPublishableKey ? publishableKey : nil,
             environment: environment,
+            region: region,
             enableLogging: true
         )
     }

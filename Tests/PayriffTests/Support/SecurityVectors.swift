@@ -1,8 +1,8 @@
 import Foundation
 @testable import Payriff
 
-/// `tls_pins.json` (CONTRACT §16.15): the pinned hosts, the pins, the trust anchors, the chain
-/// api.payriff.com serves and an interception proxy's chain.
+/// `tls_pins.json` (CONTRACT §16.15): the pinned hosts, the pins, the trust anchors, the chains
+/// api.payriff.com and api.gccpay.sa serve and an interception proxy's chain.
 struct TLSPinVectors: Decodable, Sendable {
     struct Pin: Decodable, Sendable {
         let name: String
@@ -25,6 +25,7 @@ struct TLSPinVectors: Decodable, Sendable {
     let pins: [Pin]
     let trustAnchors: [Anchor]
     let currentChain: Chain
+    let gccpayChain: Chain
     let interceptedChain: Chain
 
     static let file = try? JSONDecoder().decode(TLSPinVectors.self, from: Vectors.data("tls_pins"))

@@ -8,3 +8,5 @@
 
 PAYRIFF_PUBLISHABLE_KEY =
 PAYRIFF_ENVIRONMENT = sandbox
+// az (api.payriff.com) or sa (api.gccpay.sa, no sandbox: payments go to production)
+PAYRIFF_REGION = az

@@ -38,6 +38,9 @@ struct CardVectorTests {
         }
         let expiryRaw = try #require(try JSONSerialization.jsonObject(with: Vectors.data("card_validation")) as? [String: Any])
         #expect(((expiryRaw["expiry"] as? [String: Any])?["cases"] as? [Any])?.count == validation.expiry.cases.count)
+        let apiRaw = try #require(try JSONSerialization.jsonObject(with: Vectors.data("card_api")) as? [String: Any])
+        let hostCount = ((apiRaw["hosts"] as? [String: Any])?["cases"] as? [Any])?.count
+        #expect(hostCount == CardVectors.hostCases.count && !CardVectors.hostCases.isEmpty, "card_api.json hosts")
         #expect(CardVectors.strings.keys.sorted() == ["az", "en", "ru"])
     }
 
@@ -348,12 +351,30 @@ struct CardVectorTests {
         }
     }
 
-    @Test("The API host of each environment; sandbox is the one provisional constant")
-    func hosts() {
-        #expect(ClientAPIHost.baseURL(for: .production) == "https://api.payriff.com")
-        #expect(ClientAPIHost.baseURL(for: .sandbox) == "https://sb-api.payriff.com")
-        #expect(ClientAPIHost.host(for: .production) == "api.payriff.com")
-        #expect(ClientAPIHost.host(for: .sandbox) == "sb-api.payriff.com")
+    // MARK: card_api.json hosts
+
+    @Test("card_api.json hosts: the API base URL of each region and environment, and the warning configure logs", arguments: CardVectors.hostCases)
+    func hosts(_ vector: CardAPIVectors.HostCase) throws {
+        let region = try #require(PayriffRegion(rawValue: vector.region))
+        let environment = try #require(PayriffEnvironment(rawValue: vector.environment))
+        let config = PayriffConfig(environment: environment, region: region)
+        #expect(config.apiBaseURL == URL(string: vector.apiBaseUrl))
+        #expect(config.apiBaseURL.absoluteString == vector.apiBaseUrl)
+        #expect(ClientAPIHost.baseURL(region: region, environment: environment) == vector.apiBaseUrl)
+        #expect(ClientAPIHost.host(region: region, environment: environment) == URLComponents(string: vector.apiBaseUrl)?.host?.lowercased())
+        #expect(ClientAPIHost.sandboxWarning(region: region, environment: environment) == vector.warning)
+    }
+
+    @Test("card_api.json hosts: one case per region and environment, the default region, and the sandbox is the one provisional constant")
+    func hostTable() throws {
+        let hosts = try #require(CardVectors.api).hosts
+        #expect(PayriffConfig().region.rawValue == hosts.defaultRegion)
+        #expect(PayriffConfig().apiBaseURL == URL(string: "https://api.payriff.com"))
+        let combinations = PayriffRegion.allCases.flatMap { region in PayriffEnvironment.allCases.map { "\(region.rawValue) \($0.rawValue)" } }
+        #expect(hosts.cases.map(\.description).sorted() == combinations.sorted())
+        #expect(ClientAPIHost.allHosts == Set(hosts.cases.compactMap { URLComponents(string: $0.apiBaseUrl)?.host }))
+        #expect(PayriffRegion.allCases.map(\.rawValue) == ["az", "sa"])
+        #expect(ClientAPIHost.sandbox == "https://sb-api.payriff.com")
     }
 
     // MARK: card_api.json

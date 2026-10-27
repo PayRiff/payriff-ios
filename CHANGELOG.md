@@ -1,3 +1,22 @@
+## [1.0.0-rc.2] - 2026-10-27
+
+Second release candidate of 1.0.0 (CONTRACT revision 6). The API can still change before 1.0.0.
+
+### Added
+
+- Regions: `PayriffRegion` (`.az`, the default, and `.sa`) and `PayriffConfig.region`, next to `environment`. Region `sa` (Saudi Arabia, GCC Pay) calls `https://api.gccpay.sa`. It has no sandbox: with `environment: .sandbox` card payments go to production and charge real cards, and `configure` logs a warning (with `enableLogging`). Every Client API call and the 3-D Secure callback check use the region's host; nothing else changes between regions.
+- `PayriffConfig.apiBaseURL`: the API base URL of the configuration's region and environment. `PayriffConfig`'s `description`, `debugDescription` and mirror include the region, and so does the `Configured Payriff` log line.
+- Example app: `PAYRIFF_REGION` (`az` or `sa`) next to `PAYRIFF_ENVIRONMENT` in `Example/Config/Example.xcconfig` and the `Secrets.example.xcconfig` template, passed to `PayriffConfig.region`.
+
+### Removed
+
+- `PayriffEnvironment.apiBaseURL`: the host now depends on the region too. Use `PayriffConfig.apiBaseURL`.
+
+### Security
+
+- Certificate pinning covers `api.gccpay.sa`, which serves a Google Trust Services chain (GTS Root R1, already pinned). GTS Root R4 is pinned as a backup for Google's ECDSA chains.
+- Logs keep the path of `api.gccpay.sa` URLs, shortened like those of `api.payriff.com`; look-alike hosts still log as `scheme://host` only.
+
 ## [1.0.0-rc.1] - 2026-10-24
 
 Release candidate of 1.0.0 for the security review. The API can still change before 1.0.0.

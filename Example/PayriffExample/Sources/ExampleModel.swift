@@ -23,7 +23,7 @@ enum PaymentPresentation: String, CaseIterable, Identifiable {
 /// never creates orders and never holds a secret key.
 @MainActor
 final class ExampleModel: ObservableObject {
-    /// Compiled in from `Example/Config/*.xcconfig` (the publishable key, the environment).
+    /// Compiled in from `Example/Config/*.xcconfig` (the publishable key, the environment, the region).
     let settings = ExampleSettings.fromInfoPlist()
 
     @Published var orderId = ""

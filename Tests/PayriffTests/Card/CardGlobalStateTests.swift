@@ -39,7 +39,7 @@ extension GlobalStateTests {
         #expect(request.value(forHTTPHeaderField: "X-Client-Secret") == Self.clientSecret)
     }
 
-    @Test("The card flow uses the environment's host, the app's bundle id and only the publishable key and client secret")
+    @Test("The card flow uses the region's and environment's host, the app's bundle id and only the publishable key and client secret")
     func retrieveOrderHostsAndHeaders() async throws {
         Payriff.reset()
         let transport = FakeTransport(status: 200, body: #"{"code":"00000","payload":{"orderId":"o1","amount":"10.50","currency":"AZN","merchantName":"Shop","status":"PENDING","language":"ru","paymentMethods":["CARD"]}}"#)
@@ -63,8 +63,8 @@ extension GlobalStateTests {
         #expect(sandbox.value(forHTTPHeaderField: "X-Client-App-Id") == "com.payriff.example.ios")
         #expect(sandbox.value(forHTTPHeaderField: "Authorization") == nil)
         #expect(Set((sandbox.allHTTPHeaderFields ?? [:]).keys) == ["Accept", "X-Client-App-Id", "X-Client-Secret", "X-Public-Key"])
-        #expect(PayriffEnvironment.sandbox.apiBaseURL == URL(string: "https://sb-api.payriff.com"))
-        #expect(PayriffEnvironment.production.apiBaseURL == URL(string: "https://api.payriff.com"))
+        #expect(PayriffConfig(environment: .sandbox).apiBaseURL == URL(string: "https://sb-api.payriff.com"))
+        #expect(PayriffConfig(environment: .production).apiBaseURL == URL(string: "https://api.payriff.com"))
 
         Payriff.configure(PayriffConfig(publishableKey: Self.publishableKey, environment: .production))
         Payriff.services.clientAppId = { nil }
@@ -72,6 +72,18 @@ extension GlobalStateTests {
         let production = try #require(transport.requests.last)
         #expect(production.url?.absoluteString == "https://api.payriff.com/api/v3/client/orders/o1")
         #expect(production.value(forHTTPHeaderField: "X-Client-App-Id") == nil)
+        #expect(try Payriff.cardContext(orderId: "o1", clientSecret: Self.clientSecret).get().apiHost == "api.payriff.com")
+
+        // Region sa calls api.gccpay.sa with the same headers; it has no sandbox, so the sandbox
+        // goes there too, and its gateway callbacks are recognized on that host.
+        for environment in PayriffEnvironment.allCases {
+            Payriff.configure(PayriffConfig(publishableKey: Self.publishableKey, environment: environment, region: .sa))
+            _ = try await Payriff.retrieveOrder(orderId: "o1", clientSecret: Self.clientSecret)
+            let saudi = try #require(transport.requests.last)
+            #expect(saudi.url?.absoluteString == "https://api.gccpay.sa/api/v3/client/orders/o1", "\(environment)")
+            #expect(Set((saudi.allHTTPHeaderFields ?? [:]).keys) == ["Accept", "X-Client-Secret", "X-Public-Key"])
+            #expect(try Payriff.cardContext(orderId: "o1", clientSecret: Self.clientSecret).get().apiHost == "api.gccpay.sa")
+        }
 
         // Client API errors surface with isFatal.
         Payriff.services.transport = FakeTransport(status: 404, body: #"{"code":"01000","message":"Order not found"}"#)
@@ -92,10 +104,11 @@ extension GlobalStateTests {
         for text in [config.description, config.debugDescription, String(reflecting: config), dumped] {
             #expect(!text.contains("GLOBALTEST123"))
         }
-        #expect(config.description == "PayriffConfig(publishableKey: pr_pk_live_***(\(Self.publishableKey.count)), environment: sandbox, language: AZ, enableLogging: false, allowCompromisedDevices: false)")
-        #expect(Mirror(reflecting: config).children.map(\.label) == ["publishableKey", "environment", "language", "enableLogging", "allowCompromisedDevices"])
+        #expect(config.description == "PayriffConfig(publishableKey: pr_pk_live_***(\(Self.publishableKey.count)), environment: sandbox, region: az, language: AZ, enableLogging: false, allowCompromisedDevices: false)")
+        #expect(Mirror(reflecting: config).children.map(\.label) == ["publishableKey", "environment", "region", "language", "enableLogging", "allowCompromisedDevices"])
         #expect(PayriffConfig(publishableKey: "abc").description.contains("publishableKey: ***(3)"))
-        #expect(PayriffConfig().description == "PayriffConfig(publishableKey: nil, environment: production, language: nil, enableLogging: false, allowCompromisedDevices: false)")
+        #expect(PayriffConfig().description == "PayriffConfig(publishableKey: nil, environment: production, region: az, language: nil, enableLogging: false, allowCompromisedDevices: false)")
+        #expect(PayriffConfig(region: .sa).description.contains("environment: production, region: sa, language: nil"))
         #expect(PayriffConfig(allowCompromisedDevices: true).description.hasSuffix("allowCompromisedDevices: true)"))
         #expect(!PayriffConfig().allowCompromisedDevices, "card payments are refused on a compromised device by default")
     }

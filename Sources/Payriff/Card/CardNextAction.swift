@@ -115,9 +115,10 @@ enum CardNextAction: Sendable, Equatable, CustomStringConvertible, CustomReflect
 
 /// The 3-D Secure WebView navigation rules (CONTRACT §16.8, `card_3ds_navigation.json`).
 ///
-/// A gateway callback (`https://{apiHost}/api/v3/gateway/…/callback…`) is loaded, never cancelled,
-/// because it carries the bank's answer. The first main-frame navigation after it that is neither
-/// another callback nor `about:blank` ends the flow.
+/// A gateway callback (`https://{apiHost}/api/v3/gateway/…/callback…`, where `apiHost` is the host
+/// of ``PayriffConfig/apiBaseURL``) is loaded, never cancelled, because it carries the bank's
+/// answer. The first main-frame navigation after it that is neither another callback nor
+/// `about:blank` ends the flow.
 struct ThreeDSNavigator: Sendable {
     enum Action: String, Sendable, CaseIterable {
         /// Load it.
@@ -141,7 +142,8 @@ struct ThreeDSNavigator: Sendable {
     /// The only schemes a subframe may load: never `file:`, cleartext `http:` or another scheme.
     private static let subframeSchemes: Set<String> = ["https", "about", "data", "blob", "javascript"]
 
-    /// The lower-cased API host of the environment, such as `api.payriff.com`.
+    /// The lower-cased API host of the region and environment, such as `api.payriff.com` or
+    /// `api.gccpay.sa`.
     let apiHost: String
     /// Whether a callback was loaded in the main frame.
     private(set) var isArmed = false
@@ -150,7 +152,7 @@ struct ThreeDSNavigator: Sendable {
         self.apiHost = apiHost.lowercased()
     }
 
-    /// Whether `url` is a gateway callback of this environment: `https`, the API host
+    /// Whether `url` is a gateway callback of this region and environment: `https`, the API host
     /// (case-insensitive, default port), a path under `/api/v3/gateway/` with a `callback` segment.
     func isCallback(_ url: URL?) -> Bool {
         guard let url, let parsed = ParsedURL(url), parsed.scheme == "https",

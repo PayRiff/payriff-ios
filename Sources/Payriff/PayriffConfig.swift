@@ -1,16 +1,26 @@
 import Foundation
 
-/// The Payriff environment a payment runs against.
+/// The Payriff environment a payment runs against. Together with ``PayriffRegion`` it picks the
+/// API host (``PayriffConfig/apiBaseURL``).
 public enum PayriffEnvironment: String, Sendable, Hashable, Codable, CaseIterable {
-    /// Live payments: API `https://api.payriff.com`.
+    /// Live payments: API `https://api.payriff.com` in region ``PayriffRegion/az``,
+    /// `https://api.gccpay.sa` in region ``PayriffRegion/sa``.
     case production
-    /// Test payments: API `https://sb-api.payriff.com` (provisional, CONTRACT §16.2).
+    /// Test payments: API `https://sb-api.payriff.com`, the sandbox of region ``PayriffRegion/az``
+    /// (provisional, CONTRACT §16.2). Region ``PayriffRegion/sa`` has no sandbox: its sandbox
+    /// payments go to production (`https://api.gccpay.sa`) and charge real cards.
     case sandbox
+}
 
-    /// The API base URL the SDK calls in this environment (CONTRACT §16.2).
-    public var apiBaseURL: URL {
-        URL(string: ClientAPIHost.baseURL(for: self))!
-    }
+/// The Payriff region whose API the SDK calls (CONTRACT §16.2). Together with
+/// ``PayriffEnvironment`` it picks the API host (``PayriffConfig/apiBaseURL``).
+public enum PayriffRegion: String, Sendable, Hashable, Codable, CaseIterable {
+    /// Azerbaijan, the default: API `https://api.payriff.com`, sandbox `https://sb-api.payriff.com`.
+    case az
+    /// Saudi Arabia (GCC Pay): API `https://api.gccpay.sa`. There is no Saudi sandbox: with
+    /// ``PayriffEnvironment/sandbox`` payments go to production and charge real cards, and
+    /// ``Payriff/configure(_:)`` logs a warning.
+    case sa
 }
 
 /// SDK-wide configuration, passed to ``Payriff/configure(_:)``.
@@ -34,9 +44,16 @@ public struct PayriffConfig: Sendable {
 
     /// The environment to use. Defaults to ``PayriffEnvironment/production``.
     ///
-    /// The SDK talks to `https://api.payriff.com` in production and to
-    /// `https://sb-api.payriff.com` in the sandbox.
+    /// In region ``PayriffRegion/az`` the SDK talks to `https://api.payriff.com` in production and
+    /// to `https://sb-api.payriff.com` in the sandbox (see ``apiBaseURL``).
     public var environment: PayriffEnvironment
+
+    /// The region whose API the SDK calls. Defaults to ``PayriffRegion/az``.
+    ///
+    /// ``PayriffRegion/sa`` (Saudi Arabia, GCC Pay) talks to `https://api.gccpay.sa`. It has no
+    /// sandbox: with ``PayriffEnvironment/sandbox`` payments go to production and charge real
+    /// cards, and ``Payriff/configure(_:)`` logs a warning.
+    public var region: PayriffRegion
 
     /// The default language of the card form and the 3-D Secure sheet. `nil` uses the device
     /// language. ``PayriffCardForm/language`` takes precedence.
@@ -60,11 +77,24 @@ public struct PayriffConfig: Sendable {
     /// never reach your customers.
     public var allowCompromisedDevices: Bool
 
+    /// The API base URL the SDK calls for ``region`` and ``environment`` (CONTRACT §16.2):
+    ///
+    /// | Region | Environment | API base URL |
+    /// |---|---|---|
+    /// | `az` | production | `https://api.payriff.com` |
+    /// | `az` | sandbox | `https://sb-api.payriff.com` (provisional) |
+    /// | `sa` | production | `https://api.gccpay.sa` |
+    /// | `sa` | sandbox | `https://api.gccpay.sa`: no Saudi sandbox, payments go to production |
+    public var apiBaseURL: URL {
+        URL(string: ClientAPIHost.baseURL(region: region, environment: environment))!
+    }
+
     /// Creates a configuration.
     ///
     /// - Parameters:
     ///   - publishableKey: The publishable key (`pr_pk_live_…`).
     ///   - environment: The environment. Defaults to production.
+    ///   - region: The region. Defaults to ``PayriffRegion/az``.
     ///   - language: The default language, or `nil` for the device language.
     ///   - enableLogging: Whether the SDK emits log entries.
     ///   - allowCompromisedDevices: Whether card payments run on a jailbroken or hooked device;
@@ -72,12 +102,14 @@ public struct PayriffConfig: Sendable {
     public init(
         publishableKey: String? = nil,
         environment: PayriffEnvironment = .production,
+        region: PayriffRegion = .az,
         language: PayriffLanguage? = nil,
         enableLogging: Bool = false,
         allowCompromisedDevices: Bool = false
     ) {
         self.publishableKey = publishableKey
         self.environment = environment
+        self.region = region
         self.language = language
         self.enableLogging = enableLogging
         self.allowCompromisedDevices = allowCompromisedDevices
@@ -125,6 +157,7 @@ extension PayriffConfig: CustomStringConvertible, CustomDebugStringConvertible, 
                     : "***(\(key.count))"
             }),
             RedactedField("environment", environment, text: environment.rawValue),
+            RedactedField("region", region, text: region.rawValue),
             RedactedField("language", optional: language?.rawValue),
             RedactedField("enableLogging", enableLogging),
             RedactedField("allowCompromisedDevices", allowCompromisedDevices),

@@ -6,9 +6,10 @@ import Testing
 /// general log, the HTTP details and the URLs inside logged bodies share.
 @Suite("URL redaction in logs")
 struct URLRedactionTests {
-    @Test("Payriff's API hosts are the hosts of the two environments")
+    @Test("Payriff's API hosts are the hosts of every region and environment")
     func apiHosts() {
-        #expect(Log.apiHosts == ["api.payriff.com", "sb-api.payriff.com"])
+        #expect(Log.apiHosts == ["api.payriff.com", "sb-api.payriff.com", "api.gccpay.sa"])
+        #expect(Log.apiHosts == ClientAPIHost.allHosts)
         #expect(Log.longPathSegment == 16)
         #expect(Log.shortenedSegmentEnds == 4)
     }
@@ -25,6 +26,9 @@ struct URLRedactionTests {
         // An @ in the path or the query is not user info.
         ("https://api.payriff.com/r/@o1", "https://api.payriff.com/r/@o1"),
         ("https://api.payriff.com?email=a@b.example", "https://api.payriff.com"),
+        // Region sa's host keeps its path like api.payriff.com.
+        ("https://api.gccpay.sa/api/v3/client/orders/o1?x=1#y", "https://api.gccpay.sa/api/v3/client/orders/o1"),
+        ("https://api.gccpay.sa/api/v3/gateway/bank/callback/ORD-1", "https://api.gccpay.sa/api/v3/gateway/bank/callback/ORD-1"),
     ])
     func apiHostPaths(url: String, expected: String) {
         #expect(Log.redactedURL(url) == expected)
@@ -36,6 +40,7 @@ struct URLRedactionTests {
         ("https://api.payriff.com/x/1234567890123456", "https://api.payriff.com/x/1234…3456"),
         ("https://sb-api.payriff.com/0123456789abcdefXYZ/x/fedcba9876543210/three-ds", "https://sb-api.payriff.com/0123…fXYZ/x/fedc…3210/three-ds"),
         ("https://api.payriff.com/api/v3/client/orders/%C3%96d%C9%99ni%C5%9F", "https://api.payriff.com/api/v3/client/orders/%C3%…5%9F"),
+        ("https://api.gccpay.sa/api/v3/client/orders/7c9e6679-7425-40de-944b-e07fc1f90ae7/pay", "https://api.gccpay.sa/api/v3/client/orders/7c9e…0ae7/pay"),
         ("https://user:secret@api.payriff.com/api/v3/client/orders/7c9e6679-7425-40de-944b-e07fc1f90ae7?clientSecret=pr_cs_x#y", "https://api.payriff.com/api/v3/client/orders/7c9e…0ae7"),
         // A backslash does not split segments, so it can only make one longer.
         ("https://api.payriff.com\\api\\v3\\client\\orders\\7c9e6679-7425-40de-944b-e07fc1f90ae7", "https://api.payriff.com\\api…0ae7"),
@@ -70,6 +75,11 @@ struct URLRedactionTests {
         ("https://evil.example/api.payriff.com/x", "https://evil.example"),
         ("https://evil.example\\api.payriff.com/x", "https://evil.example"),
         ("https://api.payriff.com@evil.example/x", "https://evil.example"),
+        ("https://pay.gccpay.sa/r/o1?x=1", "https://pay.gccpay.sa"),
+        ("https://gccpay.sa/api/v3/client/orders/o1", "https://gccpay.sa"),
+        ("https://api.gccpay.sa.evil.example/api/v3/client/orders/o1", "https://api.gccpay.sa.evil.example"),
+        ("https://xapi.gccpay.sa/api/v3/client/orders/o1", "https://xapi.gccpay.sa"),
+        ("https://api.gccpay.sa@evil.example/x", "https://evil.example"),
     ])
     func otherHosts(url: String, expected: String) {
         #expect(Log.redactedURL(url) == expected)
@@ -91,6 +101,7 @@ struct URLRedactionTests {
     @Test("Upper-case schemes and hosts match and show lower-cased; the path keeps its case", arguments: [
         ("HTTPS://API.PAYRIFF.COM/api/v3/client/orders/o1?x=1", "https://api.payriff.com/api/v3/client/orders/o1"),
         ("HTTPS://Sb-Api.Payriff.Com/API/V3/Client/Orders/O1", "https://sb-api.payriff.com/API/V3/Client/Orders/O1"),
+        ("HTTPS://API.GccPay.SA/API/V3/Client/Orders/O1?x=1", "https://api.gccpay.sa/API/V3/Client/Orders/O1"),
         ("HTTPS://API.payriff.com/api/v3/client/orders/7C9E6679-7425-40DE-944B-E07FC1F90AE7", "https://api.payriff.com/api/v3/client/orders/7C9E…0AE7"),
         ("HtTp://ACS.Bank.Example/acs#frag", "http://acs.bank.example"),
         ("HTTPS://Pay.payriff.com/r/1#frag?x", "https://pay.payriff.com"),

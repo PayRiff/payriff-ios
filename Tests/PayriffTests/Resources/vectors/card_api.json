@@ -348,5 +348,35 @@
       "valid": false
     }
   ],
+  "hosts": {
+    "description": "API base URL per PayriffConfig.region and environment (CONTRACT §16.2). The default region is az. warning: the one warning configure logs for that combination (null: none).",
+    "defaultRegion": "az",
+    "cases": [
+      {
+        "region": "az",
+        "environment": "production",
+        "apiBaseUrl": "https://api.payriff.com",
+        "warning": null
+      },
+      {
+        "region": "az",
+        "environment": "sandbox",
+        "apiBaseUrl": "https://sb-api.payriff.com",
+        "warning": null
+      },
+      {
+        "region": "sa",
+        "environment": "production",
+        "apiBaseUrl": "https://api.gccpay.sa",
+        "warning": null
+      },
+      {
+        "region": "sa",
+        "environment": "sandbox",
+        "apiBaseUrl": "https://api.gccpay.sa",
+        "warning": "Region sa has no sandbox: card payments go to production (https://api.gccpay.sa) and charge real cards."
+      }
+    ]
+  },
   "description": "Client API wire rules for the native card flow (backend mobile spec §3-§9, CONTRACT.md §16.3/§16.9). Errors map exactly like the web SDK: 401 -> UNAUTHORIZED (fatal), 404 -> SESSION_EXPIRED (fatal), 429 -> RATE_LIMITED (retried 3 times with 1 s, 2 s, 4 s backoff and the same idempotency key, then fatal), 400 with code 15400 -> INVALID_REQUEST, other 400 -> ORDER_NOT_PAYABLE, anything else that is not HTTP 2xx with code 00000 -> PAYMENT_FAILED. Network failures -> NETWORK_ERROR (a /pay is retried once with the same idempotency key). Status final set: APPROVED, PREAUTH_APPROVED, DECLINED, CANCELED, EXPIRED, PREAUTH_EXPIRED, REFUNDED, PARTIAL_REFUND, REVERSE; result groups as CONTRACT §8.2. Amounts compare numerically."
 }
